@@ -1,6 +1,11 @@
 ---
-name: juyuan-user-skill
-description: Use when the user wants to publish products to K3 (开山网) or Bao66 (包牛牛), check today's new product listings, search for products by keyword, manage shops, submit fast-publish tasks, check publish job status, or review saved publish history. Always use this skill when the user mentions K3, 开山网, Bao66, 包牛牛, 极速发布, product publishing, or checking today's shoe/bag inventory — even if they don't say "publish" explicitly.
+slug: juyuan-user-skill
+version: 1.0.0
+displayName: 聚源发
+description: Use when the user wants to publish products to K3 (开山网) or Bao66 (包牛牛), check today's new product listings, search for products by keyword, manage shops, submit fast-publish tasks, check publish job status, or review saved publish history.
+tags: [k3, 开山网, 包牛牛, 极速发布, 电商, 鞋靴]
+license: MIT
+homepage: https://github.com/Jybc/juyuan-user-skill
 ---
 
 # K3 极速发布
