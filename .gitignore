@@ -20,3 +20,6 @@ Thumbs.db
 
 # Project metadata
 .workbuddy/
+
+# Zip artifact
+*.zip
