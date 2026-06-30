@@ -1,22 +1,22 @@
 ---
 slug: juyuan-user-skill
 version: 1.0.0
-displayName: 聚源发
-description: Use when the user wants to publish products to K3 (开山网) or Bao66 (包牛牛), check today's new product listings, search for products by keyword, manage shops, submit fast-publish tasks, check publish job status, or review saved publish history.
+displayName: 聚源百成大师
+description: 聚源百成大师 — 将开山网(K3)/包牛牛(Bao66)产品极速发布到淘宝、抖音、快手、拼多多等平台。支持浏览新品、搜索产品、管理店铺、追踪发布任务。
 tags: [k3, 开山网, 包牛牛, 极速发布, 电商, 鞋靴]
 license: MIT
 homepage: https://github.com/Jybc/juyuan-user-skill
 ---
 
-# K3 极速发布
+# 聚源百成大师
 
-跨平台驱动，将产品发布到开山网(K3)和包牛牛(Bao66)。
+跨平台驱动，将产品从开山网(K3)和包牛牛(Bao66)发布到淘宝、抖音、快手、拼多多等电商平台。
 
 ## 交互原则
 
-**禁止向用户展示任何代码、命令或文件路径。** 一切操作都在后台执行，用户只看到结果。获取 API Key 时用对话方式引导输入，不暴露终端命令。
+**优先用对话交互。** 获取 API Key 时用 `AskUserQuestion` 引导输入，避免让用户手动编辑配置文件。后台操作不向用户暴露终端命令细节，展示结果即可。
 
-**禁止运行测试用例。** `test_driver.py` 仅供开发阶段使用，正常使用 skill 时绝不执行测试。
+**不主动运行测试。** `test_driver.py` 仅供开发，正常使用时不执行。
 
 ---
 
@@ -82,7 +82,7 @@ multiSelect: false
 - API 接口详情：`references/api.md`
 - curl 降级方案：`references/curl-fallback.md`
 - Python 驱动用法：`scripts/driver.py`
-- Apple 风页面生成：`scripts/gen_apple.py`
+- HTML 页面生成：`scripts/gen_apple.py`
 
 #### 🔴 数据展示强约束（所有生成页面必须遵守）
 
@@ -99,7 +99,7 @@ multiSelect: false
 用户请求搜索时，按以下步骤静默执行：
 
 1. `python scripts/driver.py search <关键词> [platform]` — 调用 API 搜索（注：API 要求关键词 ≥ 3 字符，2 字符时自动追加空格或关联词）
-2. `python scripts/gen_apple.py search <关键词> [platform] <输出路径>` — 下载图片 + 生成 Apple 风 HTML
+2. `python scripts/gen_apple.py search <关键词> [platform] <输出路径>` — 下载图片 + 生成 HTML 展示页
 3. `present_files` — 展示生成的 HTML 页面给用户
 
 #### 今日新款完整链路
@@ -107,10 +107,10 @@ multiSelect: false
 用户请求查看新品时，按以下步骤静默执行：
 
 1. `python scripts/driver.py today <page> [platform]` — 拉取 API 数据
-2. `python scripts/gen_apple.py <page> [platform] <输出路径>` — 下载图片 + 生成 Apple 风 HTML
+2. `python scripts/gen_apple.py <page> [platform] <输出路径>` — 下载图片 + 生成 HTML 展示页
 3. `present_files` — 展示生成的 HTML 页面给用户
 
-> **注意**：不再把原始 JSON 数据直接展示给用户。用户看到的是已生成的 Apple 风页面。
+> **注意**：不把原始 JSON 数据直接展示给用户。用户看到的是已生成的可视化页面。
 
 ## 内部参考 — 驱动命令
 
@@ -118,9 +118,9 @@ _以下命令仅用于后台执行，不向用户展示：_
 
 ```bash
 python scripts/driver.py today [page] [platform]        # 今日新款 (原始 JSON)
-python scripts/gen_apple.py <page> [platform] [out]     # 生成 Apple 风 HTML
+python scripts/gen_apple.py <page> [platform] [out]     # 生成 HTML 展示页
 python scripts/driver.py search <关键词> [platform]      # 搜索产品
-python scripts/gen_apple.py search <关键词> [platform] [out] # 搜索→Apple 风 HTML
+python scripts/gen_apple.py search <关键词> [platform] [out] # 搜索→HTML 展示页
 python scripts/driver.py shops [platform]               # 店铺列表
 python scripts/driver.py publish <ID> <shop_id> <shop_type> [platform]  # 极速发布
 python scripts/driver.py jobs <ID> <shop_id> <shop_type> [platform]     # 任务结果
