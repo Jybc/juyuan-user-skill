@@ -1,6 +1,6 @@
 ---
 slug: juyuan-user-skill
-version: 1.0.0
+version: 1.0.1
 displayName: 聚源百成大师
 description: 聚源百成大师 — 将开山网(K3)/包牛牛(Bao66)产品极速发布到淘宝、抖音、快手、拼多多等平台。支持浏览新品、搜索产品、管理店铺、追踪发布任务。
 tags: [k3, 开山网, 包牛牛, 极速发布, 电商, 鞋靴]
