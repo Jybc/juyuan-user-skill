@@ -18,6 +18,22 @@ from driver import (
     cmd_setup, cmd_show_keys, cmd_today, cmd_search, cmd_shops,
     cmd_publish, cmd_jobs, cmd_records, cmd_record_list, cmd_record_export,
     _resolve_platform, ensure_dirs, prompt_api_key, usage,
+    # taobao 单命令
+    cmd_taobao_shop_info, cmd_taobao_seller_info, cmd_taobao_user_info,
+    cmd_taobao_product_list, cmd_taobao_product_inventory, cmd_taobao_product_detail,
+    cmd_taobao_update_price, cmd_taobao_update_product,
+    cmd_taobao_upshelf, cmd_taobao_downshelf, cmd_taobao_delete,
+    cmd_taobao_trade_list, cmd_taobao_trade_detail,
+    cmd_taobao_ship, cmd_taobao_update_address,
+    cmd_taobao_memo_add, cmd_taobao_memo_update, cmd_taobao_oaid_merge,
+    cmd_taobao_rate_list, cmd_taobao_rate_reply, cmd_taobao_rate_add,
+    cmd_taobao_refund_list, cmd_taobao_refund_detail, cmd_taobao_refund_refuse,
+    cmd_taobao_refund_agree, cmd_taobao_returngoods_agree,
+    cmd_taobao_refund_intercept, cmd_taobao_deliveryintercept_feedback, cmd_taobao_negotiatereturn,
+    # 快捷命令
+    cmd_taobao_dashboard, cmd_taobao_daily_report, cmd_taobao_quick_publish,
+    cmd_taobao_auto_ship, cmd_taobao_batch_price, cmd_taobao_batch_title,
+    cmd_taobao_rate_check, cmd_taobao_title_check,
 )
 import driver  # 用于 patch 模块属性
 
@@ -291,6 +307,25 @@ class TestApiRequest(BaseTestCase):
 
         self.assertEqual(code, 0)
         self.assertIn("connection refused", body)
+        self.assertIn("retries", body)  # v1.1: 返回重试次数
+
+    def test_retry_on_502(self):
+        """502/503/504 自动重试"""
+        error_502 = urllib.error.HTTPError(
+            "http://fake", 502, "Bad Gateway", {}, io.BytesIO(b'{"error": "gateway"}')
+        )
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.__enter__ = unittest.mock.MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock_resp.read.return_value = b'{"ok": true}'
+        mock_resp.status = 200
+
+        # 第一次 502，第二次成功
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=[error_502, mock_resp]):
+            body, code = api_request("GET", "/product/today?page=1&platform=k3", platform="k3")
+
+        self.assertEqual(code, 200)
+        self.assertIn("ok", body)
 
 
 # ── 命令函数测试 ─────────────────────────────────────────
@@ -364,6 +399,41 @@ class TestCmdSearch(BaseTestCase):
 
         self.assertIn("运动鞋", output)
         self.assertIn("test product", output)
+
+    def test_search_short_keyword_rejected(self):
+        """搜索词短于 2 字符应拒绝"""
+        output = self._capture_stdout(cmd_search, keyword="鞋", platform=None)
+        self.assertIn("code", output)
+        self.assertIn("过短", output)
+
+    def test_search_html_stripped(self):
+        """HTML 标签应被剥离"""
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.__enter__ = unittest.mock.MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock_resp.read.return_value = b'[]'
+        mock_resp.status = 200
+
+        with unittest.mock.patch("urllib.request.urlopen", return_value=mock_resp):
+            output = self._capture_stdout(cmd_search, keyword="<script>凉鞋</script>", platform=None)
+
+        self.assertNotIn("<script>", output)
+        self.assertIn("凉鞋", output)
+
+    def test_search_long_keyword_truncated(self):
+        """超过 20 字符应自动截断"""
+        long_kw = "这是一个超过二十个字符的超长搜索关键词测试输入"
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.__enter__ = unittest.mock.MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock_resp.read.return_value = b'[]'
+        mock_resp.status = 200
+
+        with unittest.mock.patch("urllib.request.urlopen", return_value=mock_resp):
+            output = self._capture_stdout(cmd_search, keyword=long_kw, platform=None)
+
+        self.assertIn("截断", output)
+        self.assertNotIn(long_kw, output)
 
 
 class TestCmdShops(BaseTestCase):
@@ -568,12 +638,76 @@ class TestUsage(unittest.TestCase):
         self.assertIn("k3", output)
         self.assertIn("bao66", output)
         self.assertIn("API-Key", output)
+        # v1.1 新增
+        self.assertIn("dashboard", output)
+        self.assertIn("batch-title", output)
+        self.assertIn("title-check", output)
+        self.assertIn("update-product", output)
+
+
+
+# ── 淘宝 / 快捷命令测试 ────────────────────────────────────
+
+class TestTaobaoDashboard(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def _mock_list(self):
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = b'{"code":0,"msg":"success","data":{"data":{"items":{"item":[{"num_iid":123,"title":"test"}]}}}}'
+        mock.status = 200
+        return mock
+
+    def test_dashboard_output(self):
+        m = self._mock_list()
+        with unittest.mock.patch("urllib.request.urlopen", return_value=m):
+            output = self._capture_stdout(cmd_taobao_dashboard, "556", "k3")
+        self.assertIn("店铺仪表盘", output)
+
+
+class TestTitleCheck(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def _mock_products(self, titles):
+        items = [{"num_iid": i, "title": t} for i, t in enumerate(titles)]
+        body = json.dumps({"code": 0, "msg": "success", "data": {"data": {"items": {"item": items}}}})
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = body.encode()
+        mock.status = 200
+        return mock
+
+    def test_short_title_warning(self):
+        m = self._mock_products(["AB"])  # 2字符, 太短
+        with unittest.mock.patch("urllib.request.urlopen", return_value=m):
+            output = self._capture_stdout(cmd_taobao_title_check, "556", "k3")
+        self.assertIn("偏短", output)
+
+    def test_no_year_warning(self):
+        m = self._mock_products(["时尚凉鞋舒适百搭女鞋春夏新款"])  # 无年份
+        with unittest.mock.patch("urllib.request.urlopen", return_value=m):
+            output = self._capture_stdout(cmd_taobao_title_check, "556", "k3")
+        self.assertIn("缺年份/季节", output)
+
+    def test_good_title_passes(self):
+        m = self._mock_products(["2026夏季新款时尚凉鞋女平底舒适百搭"])
+        with unittest.mock.patch("urllib.request.urlopen", return_value=m):
+            output = self._capture_stdout(cmd_taobao_title_check, "556", "k3")
+        self.assertIn("质量良好", output)
 
 
 class TestConstants(unittest.TestCase):
 
     def test_base_url(self):
-        self.assertEqual(BASE_URL, "https://open.jybc.com.cn/agent")
+        self.assertEqual(BASE_URL, "http://open.jybc.com.cn/agent")
 
     def test_platforms(self):
         self.assertIn("k3", PLATFORMS)
