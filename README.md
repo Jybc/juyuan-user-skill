@@ -51,18 +51,52 @@
 
 > 依赖 Python ≥ 3.8，纯标准库，无需 pip install
 
+## 模块入口
+
+| 模块 | 路径 | 作用 |
+|------|------|------|
+| API 驱动 | `scripts/driver.py` | 所有 API 调用的统一入口，1300+ 行纯 Python |
+| 测试 | `scripts/test_driver.py` | 69 个单元测试，覆盖核心功能 |
+| 展示页 | `scripts/gen_apple.py` | 生成移动端友好的产品展示 HTML |
+| 热搜提取 | `scripts/extract_hot_keywords.py` | 从 TOP20 万词表提取热搜关键词库 |
+| 标题生成 | `agents/title-generator.md` | SubAgent prompt，场景驱动 + SEO 自检 |
+| SEO 诊断 | `agents/title-seo-diagnostic.md` | 四维度标题质量分析 |
+| API 文档 | `references/index.md` | 34 个 API 速查索引 |
+| 操作流程 | `references/common-commands.md` | 8 条常用操作流程 |
+| 热搜词库 | `references/api/taobao/shoe-hot-keywords.json` | 795 个鞋靴箱包热搜词 |
+
+命令行入口：
+
+```bash
+# 直接调用 driver
+python scripts/driver.py --help                          # 全量命令列表
+python scripts/driver.py search 凉鞋 k3                  # 搜索产品
+python scripts/driver.py taobao dashboard 556 k3         # 店铺仪表盘
+python scripts/driver.py taobao generate-titles 556 k3   # 标题数据收集
+python scripts/driver.py taobao batch-price 556 +10% k3  # 批量调价
+
+# 更新热搜词库
+python scripts/extract_hot_keywords.py 淘宝TOP20万词表-无线端.xlsx
+```
+
 ## 快速开始
 
-1. 在[聚源发后台](https://open.jybc.com.cn)获取 API Key
-2. 在 WorkBuddy 中自然说话即可：
-   - **「看看今天开山网新款」** → 浏览新品
-   - **「搜凉鞋」** → 搜索产品
-   - **「查看我的店铺」** → 店铺列表
-   - **「帮我优化标题」** → AI 标题生成 + 审核
-   - **「诊断我的标题」** → SEO 深度分析
-   - **「店铺仪表盘」** → 一键看概览
-   - **「批量发货」** → 自动处理待发货订单
-3. 首次使用会引导输入 API Key，之后全程自动
+在 WorkBuddy 中说出你的需求，聚宝自动执行：
+
+| 你想做什么 | 这样说 |
+|-----------|--------|
+| 看今天新款 | 「看看开山网今天新款」「有新品吗」 |
+| 搜产品 | 「搜凉鞋」「找一个厚底拖鞋」「搜货号 xxx」 |
+| 发品到店铺 | 「把这个发到xx店铺」「上架到我的店铺」 |
+| 改全店价格 | 「全场 9 折」「全部涨价 5 块」 |
+| 处理待发货 | 「帮我发货」「待发货的单子都发了」 |
+| 看店铺情况 | 「仪表盘」「今天日报」「店铺怎么样了」 |
+| 优化标题 | 「帮我优化标题」「宝贝标题生成一下」 |
+| 检查标题 | 「诊断我的标题」「SEO 分析一下」 |
+| 看差评 | 「有没有差评」「评价巡检」 |
+| 处理退款 | 「看看退款」「同意这笔退款」 |
+
+首次使用会引导输入 API Key，之后全程自动。
 
 ## 可靠性
 
