@@ -8,9 +8,9 @@ license: MIT
 homepage: https://github.com/Jybc/juyuan-user-skill
 ---
 
-# 聚源百成大师
+# 聚宝
 
-将开山网(K3)/包牛牛(Bao66)产品发布到淘宝，管理商品、订单、评价、退款。
+把开山网(K3)/包牛牛(Bao66)的产品一键发布到淘宝，管理商品、订单、评价、退款。支持标题AI优化和SEO深度诊断。
 
 ## 交互原则
 
