@@ -1,8 +1,8 @@
 ---
 name: juyuan-user-skill
 version: 1.1.0
-displayName: 聚源百成大师
-description: 聚源百成大师 — 将开山网(K3)/包牛牛(Bao66)产品极速发布到淘宝。支持新品浏览、搜索选品、店铺商品/订单/评价/退款管理、标题AI优化、批量运营快捷命令。
+displayName: 聚宝
+description: 聚宝 — 把开山网(K3)/包牛牛(Bao66)产品一键发到淘宝。管店、改价、发货、回评、优化标题，一个skill全搞定。
 tags: [k3, 开山网, 包牛牛, 极速发布, 电商, 鞋靴]
 license: MIT
 homepage: https://github.com/Jybc/juyuan-user-skill

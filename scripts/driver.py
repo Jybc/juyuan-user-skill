@@ -1173,6 +1173,11 @@ def _exec_taobao(sub, args):
         cmd_taobao_product_detail(cmd_args[0], cmd_args[1], platform)
     elif sub == "update-price":
         cmd_taobao_update_price(cmd_args[0], cmd_args[1], cmd_args[2], platform)
+    elif sub == "update-product":
+        cmd_taobao_update_product(cmd_args[0], cmd_args[1],
+                                  cmd_args[2] if len(cmd_args) > 2 else "",
+                                  cmd_args[3] if len(cmd_args) > 3 else "",
+                                  platform)
     elif sub == "upshelf":
         cmd_taobao_upshelf(cmd_args[0], cmd_args[1], cmd_args[2] if len(cmd_args) > 2 else "100", platform)
     elif sub == "downshelf":
