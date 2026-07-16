@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "results": {
+      "type": "array",
+      "description": "每个商品一条标题优化结果",
+      "items": {
+        "type": "object",
+        "properties": {
+          "num_iid": {
+            "type": "string",
+            "description": "淘宝商品 ID"
+          },
+          "original_title": {
+            "type": "string",
+            "description": "原标题（回传验证）"
+          },
+          "original_keywords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "从原标题拆解出的关键词"
+          },
+          "generated_title": {
+            "type": "string",
+            "description": "生成的新标题",
+            "maxLength": 60
+          },
+          "keywords_preserved": {
+            "type": "boolean",
+            "description": "原关键词是否全部保留"
+          },
+          "keyword_analysis": {
+            "type": "object",
+            "properties": {
+              "p0_used": { "type": "array", "items": { "type": "string" } },
+              "p1_used": { "type": "array", "items": { "type": "string" } },
+              "p2_used": { "type": "array", "items": { "type": "string" } },
+              "p3_used": { "type": "array", "items": { "type": "string" } },
+              "missing": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "length": {
+            "type": "integer",
+            "description": "标题汉字数",
+            "minimum": 5,
+            "maximum": 30
+          },
+          "quality_score": {
+            "type": "integer",
+            "description": "0-100 质量分",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": ["num_iid", "generated_title", "keywords_preserved", "quality_score"]
+      }
+    }
+  },
+  "required": ["results"]
+}

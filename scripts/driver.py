@@ -873,6 +873,84 @@ def cmd_taobao_rate_check(shop_id, platform=None):
         for r in neg[:5]:
             print(f"  ❌ {r.get('item_title','')[:30]} | {r.get('content','')[:60]}")
 
+def cmd_taobao_generate_titles(shop_id, platform=None):
+    """标题批量生成 — product/list → product/detail → SubAgent → 对比展示
+    不直接写入，先对比新旧标题供用户审核。"""
+    import re
+    p = platform or DEFAULT_PLATFORM
+    print(f"=== 标题批量生成 (shop_id={shop_id}, {p}) ===\n")
+
+    # 1. 获取在售商品列表
+    body, _ = _taobao_get("/product/list", shop_id, "page=1&pagesize=50", p)
+    products = json.loads(body)
+    items = products.get("data", {}).get("data", {}).get("items", {}).get("item", [])
+    if not items:
+        print("无在售商品")
+        return
+    print(f"在售 {len(items)} 个商品，正在拉取属性...\n")
+
+    # 2. 逐个拉取商品详情
+    product_data = []
+    skipped = []
+    for i, item in enumerate(items):
+        ni = item.get("num_iid", "")
+        print(f"  [{i+1}/{len(items)}] 拉取 {ni} ...", end=" ", flush=True)
+        body, code = _taobao_get("/product/detail", shop_id, f"num_iid={ni}", p)
+        if code != 200:
+            skipped.append(ni)
+            print("跳过")
+            continue
+        detail = json.loads(body)
+        item_info = detail.get("data", {}).get("data", {}).get("item", {})
+        if not item_info:
+            # fallback: list 数据 + desc 提取关键词
+            title = item.get("title", "")
+            desc_raw = item.get("desc", "")
+            # 提取描述关键词
+            desc_kw = re.findall(r'[\u4e00-\u9fa5]{2,4}', str(desc_raw))[:5]
+            product_data.append({
+                "num_iid": ni,
+                "current_title": title,
+                "category": "",
+                "attributes": {},
+                "price": float(item.get("price", 0)),
+                "supplier": item.get("nick", ""),
+                "desc_keywords": desc_kw,
+            })
+            print("OK (降级)")
+        else:
+            # 解析淘宝属性 props_name → 结构化键值
+            props_name = str(item_info.get("props_name", ""))
+            attrs = {}
+            for pair in props_name.split(";"):
+                kv = pair.split(":", 1)
+                if len(kv) == 2:
+                    # 淘宝属性如 "20000:黑色"，需映射到可读名
+                    attrs[kv[0]] = kv[1]
+            # 提取desc关键词
+            desc_raw = str(item_info.get("desc", ""))
+            desc_kw = re.findall(r'[\u4e00-\u9fa5]{2,4}', desc_raw)[:5]
+            product_data.append({
+                "num_iid": ni,
+                "current_title": str(item_info.get("title", "")),
+                "category": str(item_info.get("cid", "")),
+                "attributes": attrs,
+                "price": float(item_info.get("price", 0)),
+                "supplier": str(item_info.get("nick", "")),
+                "desc_keywords": desc_kw,
+            })
+            print("OK")
+
+    if not product_data:
+        print("\n无可用商品数据")
+        return
+    if skipped:
+        print(f"\n跳过 {len(skipped)} 个: {skipped}")
+
+    # 3. 输出为 JSON，供 Agent 发送给 SubAgent
+    print(f"\n收集 {len(product_data)} 个商品数据，输入 SubAgent:\n")
+    print(json.dumps({"products": product_data}, ensure_ascii=False, indent=2))
+
 def cmd_taobao_daily_report(shop_id, platform=None):
     """每日经营日报"""
     p = platform or DEFAULT_PLATFORM
@@ -969,6 +1047,7 @@ def usage():
   taobao auto-ship <shop_id> [express_code] [track_no] [platform] 批量发货(待发货→发货)
   taobao batch-price <shop_id> <adjustment> [platform]  批量调价(+10%, -5, 99.0)
   taobao batch-title <shop_id> <mode> <value> [preview] [platform] 批量标题优化(prefix/suffix/replace)
+  taobao generate-titles <shop_id> [platform]         标题AI生成(属性→SEO标题，需审核)
   taobao rate-check <shop_id> [platform]              评价巡检(差评告警)
   taobao title-check <shop_id> [platform]             标题质量巡检
   taobao daily-report <shop_id> [platform]            每日经营日报
@@ -1033,6 +1112,7 @@ def _exec_taobao(sub, args):
         "auto-ship":                     (cmd_taobao_auto_ship,              1, 4),
         "batch-price":                   (cmd_taobao_batch_price,            2, 3),
         "batch-title":                   (cmd_taobao_batch_title,            3, 5),
+        "generate-titles":               (cmd_taobao_generate_titles,        1, 2),
         "rate-check":                    (cmd_taobao_rate_check,             1, 2),
         "daily-report":                  (cmd_taobao_daily_report,           1, 2),
     }
@@ -1046,7 +1126,7 @@ def _exec_taobao(sub, args):
         print("      refund-list, refund-detail, refund-refuse, refund-agree,")
         print("      returngoods-agree, refund-intercept, deliveryintercept-feedback, negotiatereturn")
         print("快捷命令:")
-        print("      dashboard, quick-publish, auto-ship, batch-price, batch-title, rate-check, daily-report, title-check")
+        print("      dashboard, quick-publish, auto-ship, batch-price, batch-title, generate-titles, rate-check, daily-report, title-check")
         sys.exit(1)
 
     func, min_args, max_args = cmds[sub]
@@ -1171,6 +1251,8 @@ def _exec_taobao(sub, args):
         preview = cmd_args[3] if len(cmd_args) > 3 else "true"
         cmd_taobao_batch_title(cmd_args[0], cmd_args[1], cmd_args[2],
                                preview.lower() != "false", platform)
+    elif sub == "generate-titles":
+        cmd_taobao_generate_titles(cmd_args[0], platform)
     elif sub == "rate-check":
         cmd_taobao_rate_check(cmd_args[0], platform)
     elif sub == "daily-report":
