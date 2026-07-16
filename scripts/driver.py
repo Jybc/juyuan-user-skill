@@ -230,7 +230,7 @@ def cmd_shops(platform=None):
     """获取已绑定店铺列表"""
     p = platform or DEFAULT_PLATFORM
     print(f"=== 店铺列表 (platform={p}) ===")
-    path = _add_platform("/user/shops", platform)
+    path = _add_platform("/user/taobao-shops", platform)
     body, code = api_request("GET", path, platform=p)
     pretty_print(body)
 

@@ -8,7 +8,7 @@
 |-----|------|------|------|
 | /product/today | GET | [product-today.md](api/jybc/product-today.md) | 今日新款列表 |
 | /product/search | GET | [product-search.md](api/jybc/product-search.md) | 搜索产品（2~20字符） |
-| /user/shops | GET | [user-shops.md](api/jybc/user-shops.md) | 已绑定店铺列表 |
+| /user/taobao-shops | GET | [user-shops.md](api/jybc/user-shops.md) | 已绑定店铺列表 |
 | /product/fast-publish | POST | [product-fast-publish.md](api/jybc/product-fast-publish.md) | 提交极速发布 |
 | /product/fast-publish-result | GET | [product-fast-publish-result.md](api/jybc/product-fast-publish-result.md) | 查询发布结果 |
 

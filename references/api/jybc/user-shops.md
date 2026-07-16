@@ -1,4 +1,4 @@
-# GET /user/shops
+# GET /user/taobao-shops
 
 获取已绑定店铺列表。
 
