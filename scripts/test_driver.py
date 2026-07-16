@@ -33,7 +33,7 @@ from driver import (
     # 快捷命令
     cmd_taobao_dashboard, cmd_taobao_daily_report, cmd_taobao_quick_publish,
     cmd_taobao_auto_ship, cmd_taobao_batch_price, cmd_taobao_batch_title,
-    cmd_taobao_rate_check, cmd_taobao_title_check,
+    cmd_taobao_rate_check, cmd_taobao_title_check, cmd_taobao_generate_titles,
 )
 import driver  # 用于 patch 模块属性
 
@@ -702,6 +702,111 @@ class TestTitleCheck(BaseTestCase):
         with unittest.mock.patch("urllib.request.urlopen", return_value=m):
             output = self._capture_stdout(cmd_taobao_title_check, "556", "k3")
         self.assertIn("质量良好", output)
+
+
+class TestGenerateTitles(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def _mock_list(self, items=None):
+        """模拟 product/list 响应"""
+        data = {"item": items or []}
+        body = json.dumps({"code": 0, "msg": "success", "data": {"data": {"items": data, "total_results": len(data["item"])}}})
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = body.encode()
+        mock.status = 200
+        return mock
+
+    def _mock_detail(self, title, props_name="", desc="", cid="", price=99, outer_id=""):
+        """模拟 product/detail 响应"""
+        item = {
+            "num_iid": "123",
+            "title": title,
+            "props_name": props_name,
+            "desc": desc,
+            "cid": cid,
+            "price": price,
+            "nick": "测试商家",
+            "outer_id": outer_id,
+        }
+        body = json.dumps({"code": 0, "msg": "success", "data": {"data": {"item": item}}})
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = body.encode()
+        mock.status = 200
+        return mock
+
+    def _mock_detail_fail(self):
+        """模拟 product/detail 失败"""
+        error = urllib.error.HTTPError("http://fake", 500, "Error", {}, io.BytesIO(b"{}"))
+        return error
+
+    def test_empty_shop(self):
+        """无在售商品时正确提示"""
+        mock = self._mock_list([])
+        with unittest.mock.patch("urllib.request.urlopen", return_value=mock):
+            output = self._capture_stdout(cmd_taobao_generate_titles, "556", "k3")
+        self.assertIn("无在售商品", output)
+
+    def test_collects_detail_attributes(self):
+        """成功拉取商品属性"""
+        mock_list = self._mock_list([{"num_iid": "123", "title": "测试标题", "price": "38"}])
+        mock_detail = self._mock_detail("测试标题", "20000:黑色;30000:平底", "成分；布，革；码号；36-42")
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=[mock_list, mock_detail]):
+            output = self._capture_stdout(cmd_taobao_generate_titles, "556", "k3")
+        self.assertIn("products", output)
+        self.assertIn("测试标题", output)
+        self.assertIn("20000", output)  # props_name key preserved
+        self.assertIn("黑色", output)   # props_name value preserved
+
+    def test_detail_fallback(self):
+        """detail API 失败时降级到 list 数据"""
+        mock_list = self._mock_list([{"num_iid": "123", "title": "降级标题", "price": "38"}])
+        mock_fail = self._mock_detail_fail()
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=[mock_list, mock_fail]):
+            output = self._capture_stdout(cmd_taobao_generate_titles, "556", "k3")
+        self.assertIn("降级标题", output)
+        self.assertIn("降级", output)  # "(降级)" label
+
+    def test_desc_keyword_extraction(self):
+        """停用词过滤 + 去重"""
+        mock_list = self._mock_list([{"num_iid": "123", "title": "测试", "price": "38"}])
+        mock_detail = self._mock_detail("测试", "", "现货；舒适；百搭；可以；可以提供；舒适现货")
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=[mock_list, mock_detail]):
+            output = self._capture_stdout(cmd_taobao_generate_titles, "556", "k3")
+        json_start = output.index("{")
+        parsed = json.loads(output[json_start:])
+        kw = parsed["products"][0]["desc_keywords"]
+        # 停用词过滤
+        self.assertIn("现货", kw)
+        self.assertIn("舒适", kw)
+        self.assertIn("百搭", kw)
+        self.assertNotIn("可以", kw)
+        self.assertNotIn("提供", kw)
+
+    def test_skipped_products_reported(self):
+        """detail 失败时仍纳入输出，使用降级数据"""
+        mock_list = self._mock_list([
+            {"num_iid": "111", "title": "好商品", "price": "38"},
+            {"num_iid": "222", "title": "坏商品", "price": "28"},
+        ])
+        mock_detail1 = self._mock_detail("好商品", "20000:红色")
+        mock_detail2 = self._mock_detail_fail()
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=[mock_list, mock_detail1, mock_detail2]):
+            output = self._capture_stdout(cmd_taobao_generate_titles, "556", "k3")
+        # 两个商品都应该出现在输出中（detail失败的使用list降级数据）
+        json_start = output.index("{")
+        parsed = json.loads(output[json_start:])
+        self.assertEqual(len(parsed["products"]), 2)
 
 
 class TestConstants(unittest.TestCase):

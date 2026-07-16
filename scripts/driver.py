@@ -891,14 +891,28 @@ def cmd_taobao_generate_titles(shop_id, platform=None):
 
     # 2. 逐个拉取商品详情
     product_data = []
-    skipped = []
     for i, item in enumerate(items):
         ni = item.get("num_iid", "")
         print(f"  [{i+1}/{len(items)}] 拉取 {ni} ...", end=" ", flush=True)
         body, code = _taobao_get("/product/detail", shop_id, f"num_iid={ni}", p)
         if code != 200:
-            skipped.append(ni)
-            print("跳过")
+            # detail 失败，使用 list 数据降级
+            title = item.get("title", "")
+            desc_raw = str(item.get("desc", ""))
+            raw_kw = re.findall(r'[\u4e00-\u9fa5]{2,4}', desc_raw)
+            stop = {"可以", "提供", "注","大货已出","放心上架","数据包","颜色不齐"}
+            desc_kw = list(dict.fromkeys(w for w in raw_kw if w not in stop))[:8]
+            product_data.append({
+                "num_iid": ni,
+                "current_title": title,
+                "category": "",
+                "attributes": {},
+                "price": float(item.get("price", 0)),
+                "supplier": item.get("nick", ""),
+                "desc_keywords": desc_kw,
+                "outer_id": "",
+            })
+            print("跳过 (降级)")
             continue
         detail = json.loads(body)
         item_info = detail.get("data", {}).get("data", {}).get("item", {})
@@ -949,8 +963,6 @@ def cmd_taobao_generate_titles(shop_id, platform=None):
     if not product_data:
         print("\n无可用商品数据")
         return
-    if skipped:
-        print(f"\n跳过 {len(skipped)} 个: {skipped}")
 
     # 3. 输出为 JSON，供 Agent 发送给 SubAgent
     print(f"\n收集 {len(product_data)} 个商品数据，输入 SubAgent:\n")
