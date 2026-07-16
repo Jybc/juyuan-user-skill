@@ -98,6 +98,10 @@ options: [
 
 SubAgent prompt 和 Schema 位于 `agents/title-generator.md` / `agents/title-generator.schema.json`。
 
+SEO 诊断 Prompt 位于 `agents/title-seo-diagnostic.md`。
+
+**触发词**：`SEO诊断` / `标题诊断` / `分析我的标题` / `检查标题质量`
+
 ## 常见问题
 
 - **搜索关键词不够？** 需 ≥ 2 字符，超 20 自动截断。
