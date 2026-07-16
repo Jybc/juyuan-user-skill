@@ -2,6 +2,7 @@
 """K3 极速发布平台 API 驱动。纯 stdlib，无需 pip install，跨平台可用。"""
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -876,7 +877,6 @@ def cmd_taobao_rate_check(shop_id, platform=None):
 def cmd_taobao_generate_titles(shop_id, platform=None):
     """标题批量生成 — product/list → product/detail → SubAgent → 对比展示
     不直接写入，先对比新旧标题供用户审核。"""
-    import re
     p = platform or DEFAULT_PLATFORM
     print(f"=== 标题批量生成 (shop_id={shop_id}, {p}) ===\n")
 
@@ -925,19 +925,24 @@ def cmd_taobao_generate_titles(shop_id, platform=None):
             for pair in props_name.split(";"):
                 kv = pair.split(":", 1)
                 if len(kv) == 2:
-                    # 淘宝属性如 "20000:黑色"，需映射到可读名
                     attrs[kv[0]] = kv[1]
-            # 提取desc关键词
+            # 提取描述中的中文关键词（过滤字数<2的碎片 + 标点）
             desc_raw = str(item_info.get("desc", ""))
-            desc_kw = re.findall(r'[\u4e00-\u9fa5]{2,4}', desc_raw)[:5]
+            raw_kw = re.findall(r'[\u4e00-\u9fa5]{2,6}', desc_raw)
+            # 去重、过滤通用停用词
+            stop = {"可以", "提供", "注","大货已出","放心上架","数据包","颜色不齐"}
+            desc_kw = list(dict.fromkeys(w for w in raw_kw if w not in stop))[:8]
+            # 获取 cid 对应的类目路径
+            cid = str(item_info.get("cid", ""))
             product_data.append({
                 "num_iid": ni,
                 "current_title": str(item_info.get("title", "")),
-                "category": str(item_info.get("cid", "")),
+                "category": cid,
                 "attributes": attrs,
                 "price": float(item_info.get("price", 0)),
                 "supplier": str(item_info.get("nick", "")),
                 "desc_keywords": desc_kw,
+                "outer_id": str(item_info.get("outer_id", "")),
             })
             print("OK")
 
