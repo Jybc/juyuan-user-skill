@@ -206,6 +206,165 @@ def build_html(ctx, platform):
 </body>
 </html>'''
 
+def profit_board_html(profit_data, shop_name=""):
+    """生成利润看板 HTML 页面。profit_data 为 cmd_taobao_profit_analysis() 返回的文本，
+    解析其中的结构化信息后渲染。"""
+    import re
+
+    products = []
+    summary = {}
+    has_missing = False
+
+    # 解析 profit-analysis 文本输出为结构化数据
+    lines = profit_data.split("\n") if isinstance(profit_data, str) else []
+    in_ranking = False
+    for line in lines:
+        line = line.strip()
+        # 汇总行: [汇总] 总收入 ¥xxx | 总成本 ¥xxx | 净利润 ¥xxx | 利润率 xx%
+        m = re.match(r'\[汇总\]\s*总收入\s*¥([\d,]+\.?\d*)\s*\|\s*总成本\s*¥([\d,]+\.?\d*)\s*\|\s*净利润\s*¥([\d,]+\.?\d*)\s*\|\s*利润率\s*([\d.]+)%', line)
+        if m:
+            summary = {
+                "total_revenue": float(m.group(1).replace(",", "")),
+                "total_cost": float(m.group(2).replace(",", "")),
+                "total_profit": float(m.group(3).replace(",", "")),
+                "profit_rate": float(m.group(4)),
+            }
+            continue
+        if "缺拿货价" in line:
+            has_missing = True
+        if "利润排行" in line:
+            in_ranking = True
+            continue
+        if not in_ranking:
+            continue
+        # 排行行: " 1. [1001] 凉鞋    收入 ¥1,280 | 成本 ¥500 | 净利 ¥780 | 60.0%"
+        m = re.match(r'\s*(\d+)\.\s*\[([^\]]+)\]\s*(.+?)\s*收入\s*¥([\d,]+\.?\d*)\s*\|\s*成本\s*¥([\d,]+\.?\d*)\s*\|\s*净利\s*¥([\d,]+\.?\d*)\s*\|\s*([\d.]+)%', line)
+        if m:
+            products.append({
+                "rank": int(m.group(1)),
+                "num_iid": m.group(2).strip(),
+                "title": m.group(3).strip(),
+                "revenue": float(m.group(4).replace(",", "")),
+                "cost": float(m.group(5).replace(",", "")),
+                "net_profit": float(m.group(6).replace(",", "")),
+                "profit_rate": float(m.group(7)),
+                "has_missing": "缺拿货价" in line,
+            })
+
+    # 构建排名表格行
+    rows = ""
+    for p in products:
+        css_class = "profit-positive" if p["profit_rate"] >= 30 else "profit-warn" if p["profit_rate"] < 20 else "profit-neutral"
+        missing_tag = ' <span class="missing-badge">缺拿货价</span>' if p.get("has_missing") else ""
+        rows += f"""
+        <tr>
+            <td class="rank">#{p['rank']}</td>
+            <td class="product-name">{p['title'][:30]}{missing_tag}</td>
+            <td class="money">¥{p['revenue']:,.2f}</td>
+            <td class="money">¥{p['cost']:,.2f}</td>
+            <td class="money {css_class}">¥{p['net_profit']:,.2f}</td>
+            <td class="rate {css_class}">{p['profit_rate']:.1f}%</td>
+        </tr>
+        """
+
+    shop_label = f"{shop_name} · " if shop_name else ""
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>{shop_label}利润看板</title>
+<style>
+  :root {{ --brand: #1a73e8; --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; }}
+  *,*::before,*::after {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{
+    font-family: -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; padding: 16px;
+    -webkit-font-smoothing: antialiased;
+  }}
+  h2 {{ font-size: 20px; font-weight: 700; margin-bottom: 4px; }}
+  .subtitle {{ font-size: 12px; color: #999; margin-bottom: 16px; }}
+  /* ── 汇总卡片 ── */
+  .summary-cards {{
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px;
+  }}
+  .s-card {{
+    background: var(--card-bg); border-radius: 12px; padding: 16px; text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }}
+  .s-card .val {{ font-size: 24px; font-weight: 800; }}
+  .s-card .label {{ font-size: 11px; color: #999; margin-top: 4px; }}
+  .s-card .val.green {{ color: #22c55e; }}
+  .s-card .val.red {{ color: #ef4444; }}
+  /* ── 排名表 ── */
+  .ranking-table {{
+    background: var(--card-bg); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }}
+  table {{ width: 100%; border-collapse: collapse; }}
+  th {{
+    background: #f8f9fc; padding: 10px 8px; font-size: 11px; color: #888; font-weight: 600;
+    text-align: left; border-bottom: 2px solid #eee; text-transform: uppercase;
+  }}
+  td {{ padding: 10px 8px; border-bottom: 1px solid #f1f1f1; font-size: 13px; }}
+  .rank {{ width: 36px; color: #aaa; font-weight: 700; text-align: center; }}
+  .product-name {{ font-weight: 600; }}
+  .money {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  .rate {{ text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }}
+  .profit-positive {{ color: #22c55e; }}
+  .profit-neutral {{ color: #f59e0b; }}
+  .profit-warn {{ color: #ef4444; }}
+  .missing-badge {{
+    display: inline-block; font-size: 9px; background: #fef3c7; color: #b45309;
+    padding: 1px 5px; border-radius: 3px; margin-left: 4px; font-weight: 500;
+  }}
+  .missing-hint {{
+    margin-top: 16px; padding: 10px 14px; background: #fef3c7; border-radius: 8px;
+    font-size: 12px; color: #92400e;
+  }}
+  footer {{ text-align: center; padding: 24px 0 40px; font-size: 12px; color: #ccc; }}
+  /* ── 桌面端 ── */
+  @media (min-width: 768px) {{
+    body {{ padding: 24px; max-width: 960px; margin: 0 auto; }}
+    .summary-cards {{ grid-template-columns: repeat(4, 1fr); }}
+  }}
+</style>
+</head>
+<body>
+  <h2>{shop_label}利润看板</h2>
+  <div class="subtitle">最近30天 · 已成交订单</div>
+
+  <div class="summary-cards">
+    <div class="s-card">
+      <div class="val">¥{summary.get('total_revenue', 0):,.0f}</div>
+      <div class="label">总收入</div>
+    </div>
+    <div class="s-card">
+      <div class="val">¥{summary.get('total_cost', 0):,.0f}</div>
+      <div class="label">总成本</div>
+    </div>
+    <div class="s-card">
+      <div class="val green">¥{summary.get('total_profit', 0):,.0f}</div>
+      <div class="label">净利润</div>
+    </div>
+    <div class="s-card">
+      <div class="val {"green" if summary.get('profit_rate', 0) >= 20 else "red"}">{summary.get('profit_rate', 0):.1f}%</div>
+      <div class="label">利润率</div>
+    </div>
+  </div>
+
+  <div class="ranking-table">
+    <table>
+      <tr><th>#</th><th>商品</th><th class="money">收入</th><th class="money">成本</th><th class="money">净利</th><th class="rate">利润率</th></tr>
+      {rows}
+    </table>
+  </div>
+  {"<div class='missing-hint'>⚠ 标注「缺拿货价」的商品来自手工上架，未匹配到批发价。<br>通过聚宝发布的商品可自动追溯拿货价。</div>" if has_missing else ""}
+  <footer>聚宝 · 利润分析</footer>
+</body>
+</html>"""
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "today"
     img_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "k3-images")
@@ -217,6 +376,16 @@ def main():
         data = fetch_search(keyword, platform)
         b64 = download_images(data, img_dir)
         html = build_html({"label": f"搜索「{keyword}」", "count": f"{len(data)}个结果", "body": cards_html(data, b64)}, platform)
+    elif cmd == "profit":
+        data_file = sys.argv[2] if len(sys.argv) > 2 else None
+        shop_name = sys.argv[3] if len(sys.argv) > 3 else ""
+        out = sys.argv[4] if len(sys.argv) > 4 else "利润看板.html"
+        if data_file and os.path.exists(data_file):
+            with open(data_file, "r", encoding="utf-8") as f:
+                profit_raw = f.read()
+        else:
+            profit_raw = sys.stdin.read()
+        html = profit_board_html(profit_raw, shop_name)
     else:
         page = int(sys.argv[1]) if len(sys.argv) > 1 else 1
         platform = sys.argv[2] if len(sys.argv) > 2 else "k3"
@@ -232,7 +401,7 @@ def main():
 
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"OK {out} ({len(data)} items)")
+    print(f"OK {out}")
 
 if __name__ == "__main__":
     main()

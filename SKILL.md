@@ -113,13 +113,70 @@ SEO 诊断 Prompt 位于 `agents/title-seo-diagnostic.md`。
 
 **触发词**：`SEO诊断` / `标题诊断` / `分析我的标题` / `检查标题质量`
 
+#### 利润分析链路
+
+**触发词**：`利润分析` / `算算利润` / `赚了多少` / `哪个款最赚钱` / `利润排行` / `结算一下`
+
+用户说这些词时，执行以下流程：
+
+**阶段 0 — 成本配置（首次运行时）：**
+1. 检查 `~/.config/k3-publish/config` 中是否存在 `COST_PACKING=xxx` 配置项
+2. 不存在时用 `AskUserQuestion` 引导：
+```
+header: "成本配置"
+question: "每单的包装和杂费大约多少？后续可在成本配置中修改。"
+options: [
+  {label: "¥2", description: "普通纸箱+胶带+气泡膜"},
+  {label: "¥3", description: "品牌定制包装盒"},
+  {label: "¥5", description: "礼盒+手提袋+贴纸"},
+]
+```
+3. 用户选择后将值写入 `COST_PACKING=xxx` 到 config 文件
+4. 继续询问是否计入广告费：
+```
+header: "广告费"
+question: "利润分析中是否包含广告费？"
+options: [
+  {label: "不包含", description: "仅算成本+平台扣点"},
+  {label: "包含", description: "请告诉我每月广告费总额"},
+]
+```
+5. 选择「包含」则引导输入月均广告费，存为 `COST_AD_DAILY=xxx`（日均可分配）
+
+**阶段 1 — 数据收集：**
+1. `python scripts/driver.py taobao profit-analysis <shop_id> [platform]`
+   — 拉取 TRADE_FINISHED + WAIT_BUYER_CONFIRM_GOODS 订单
+   — 拉取退款数据
+   — 匹配发布记录 CSV 中的拿货价
+   — 输出结构化文本（收入/成本/净利/利润率排行）
+
+**阶段 2 — 可视化展示：**
+2. `python scripts/gen_apple.py profit <profit_data_file> <shop_name> <output.html>`
+   — 将阶段 1 的文本输出写入临时文件，传入 gen_apple.py
+   — 生成包含汇总卡片 + 利润率排行表的移动端友好 HTML
+3. `present_files` 展示利润看板
+4. 标注缺拿货价的商品，提示用户补充
+
+**阶段 3 — 交互追问：**
+5. 展示看板后用 `AskUserQuestion` 引导深入分析：
+```
+header: "利润分析"
+question: "还需要深入分析哪方面？"
+options: [
+  {label: "只看亏损商品", description: "过滤利润率偏低的商品"},
+  {label: "利润趋势对比", description: "和上个月比利润变化"},
+  {label: "导出报表", description: "导出CSV格式利润报表"},
+  {label: "优化建议", description: "AI分析哪些品该提价或下架"},
+]
+```
+
 ## 常见问题
 
 - **搜索关键词不够？** 需 ≥ 2 字符，超 20 自动截断。
 - **店铺不存在或没有权限？** `shops` 查看已授权店铺列表。
 - **网络波动报错？** 驱动自动重试 3 次，无需手动处理。
 - **看不懂错误？** 响应附带 `_hint` 字段给出中文提示。
-- **快捷命令？** `dashboard` 仪表盘 / `daily-report` 日报 / `auto-ship` 批量发货 / `batch-price` 批量调价 / `batch-title` 标题优化 / `title-check` 标题巡检 / `rate-check` 差评告警。完整列表见 `python scripts/driver.py --help`。
+- **快捷命令？** `dashboard` 仪表盘 / `daily-report` 日报 / `profit-analysis` 利润分析 / `auto-ship` 批量发货 / `batch-price` 批量调价 / `batch-title` 标题优化 / `title-check` 标题巡检 / `rate-check` 差评告警。完整列表见 `python scripts/driver.py --help`。
 ## 参考文档时效性
 
 命令列表以 `python scripts/driver.py --help` 为唯一权威来源，始终与服务端同步。`references/api.md` 为补充说明，可能滞后于实际实现。遇到不一致时以 `--help` 输出为准。
