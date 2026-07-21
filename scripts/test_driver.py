@@ -34,6 +34,7 @@ from driver import (
     cmd_taobao_dashboard, cmd_taobao_daily_report, cmd_taobao_quick_publish,
     cmd_taobao_auto_ship, cmd_taobao_batch_price, cmd_taobao_batch_title,
     cmd_taobao_rate_check, cmd_taobao_title_check, cmd_taobao_generate_titles,
+    cmd_taobao_profit_analysis,
 )
 import driver  # 用于 patch 模块属性
 
@@ -822,6 +823,108 @@ class TestConstants(unittest.TestCase):
 
     def test_default_platform(self):
         self.assertEqual(DEFAULT_PLATFORM, "k3")
+
+
+class TestProfitAnalysis(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def _mock_trade_resp(self, trades=None):
+        if trades is None:
+            trades = [
+                {"num_iid": "1001", "tid": "t001", "title": "一字扣凉鞋女",
+                 "orders": {"order": [{"payment": "128.00", "num": "1"}]}},
+                {"num_iid": "1001", "tid": "t002", "title": "一字扣凉鞋女",
+                 "orders": {"order": [{"payment": "128.00", "num": "2"}]}},
+                {"num_iid": "1002", "tid": "t003", "title": "包头拖鞋女",
+                 "orders": {"order": [{"payment": "89.00", "num": "1"}]}},
+            ]
+        body = json.dumps({"code": 0, "data": {"data": {"trades": {"trade": trades}}}})
+        return self._make_mock_resp(body)
+
+    def _mock_refund_resp(self, refunds=None):
+        if refunds is None:
+            refunds = []
+        body = json.dumps({"code": 0, "data": {"data": {"refunds": {"refund": refunds}}}})
+        return self._make_mock_resp(body)
+
+    def _make_mock_resp(self, body):
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = body.encode()
+        mock.status = 200
+        return mock
+
+    def test_profit_analysis_basic(self):
+        """测试利润分析：多笔订单聚合+无退款+无拿货价场景"""
+        # 两次 trade-list (TRADE_FINISHED, WAIT_BUYER_CONFIRM_GOODS) + 两次 refund-list
+        trade_mock = self._mock_trade_resp()
+        refund_mock = self._mock_refund_resp()
+
+        mock_results = [trade_mock, trade_mock, refund_mock, refund_mock]
+        call_idx = [0]
+
+        def mock_urlopen(*args, **kwargs):
+            i = call_idx[0]
+            call_idx[0] = i + 1
+            return mock_results[min(i, len(mock_results) - 1)]
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            result = cmd_taobao_profit_analysis("556", "k3")
+
+        self.assertIn("利润分析", result)
+        self.assertIn("一字扣凉鞋女", result)
+        self.assertIn("包头拖鞋女", result)
+        self.assertIn("净利润", result)
+        # 无拿货价时应有提示
+        self.assertIn("⚠ 部分商品缺拿货价", result)
+
+    def test_profit_analysis_no_trades(self):
+        """测试无订单数据时的降级处理"""
+        trade_mock = self._mock_trade_resp([])
+        refund_mock = self._mock_refund_resp([])
+
+        mock_results = [trade_mock, trade_mock, refund_mock, refund_mock]
+        call_idx = [0]
+
+        def mock_urlopen(*args, **kwargs):
+            i = call_idx[0]
+            call_idx[0] = i + 1
+            return mock_results[min(i, len(mock_results) - 1)]
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            result = cmd_taobao_profit_analysis("556", "k3")
+
+        self.assertIn("无订单数据", result)
+
+    def test_profit_analysis_with_refunds(self):
+        """测试含退款的利润计算"""
+        trades = [
+            {"num_iid": "1001", "tid": "t001", "title": "厚底凉鞋",
+             "orders": {"order": [{"payment": "200.00", "num": "1"}]}},
+        ]
+        refunds = [{"tid": "t001", "refund_fee": "200.00"}]
+
+        trade_mock = self._mock_trade_resp(trades)
+        refund_mock = self._mock_refund_resp(refunds)
+
+        mock_results = [trade_mock, trade_mock, refund_mock, refund_mock]
+        call_idx = [0]
+
+        def mock_urlopen(*args, **kwargs):
+            i = call_idx[0]
+            call_idx[0] = i + 1
+            return mock_results[min(i, len(mock_results) - 1)]
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            result = cmd_taobao_profit_analysis("556", "k3")
+
+        self.assertIn("利润分析", result)
+        # 退款后净利应为 0 或接近 0
+        self.assertIn("厚底凉鞋", result)
 
 
 if __name__ == "__main__":

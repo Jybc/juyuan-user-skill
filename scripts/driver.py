@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """K3 极速发布平台 API 驱动。纯 stdlib，无需 pip install，跨平台可用。"""
+import io
 import json
 import os
 import re
@@ -1011,6 +1012,176 @@ def cmd_taobao_daily_report(shop_id, platform=None):
 
     print()
 
+def cmd_taobao_profit_analysis(shop_id, platform=None):
+    """利润分析：整合订单+退款+发布记录拿货价，计算每件商品净利润"""
+    import csv as _csv
+
+    p = platform or DEFAULT_PLATFORM
+    out = stdout = io.StringIO()
+
+    print(f"=== 利润分析 (shop_id={shop_id}, {p}) ===\n", file=stdout)
+
+    PLATFORM_FEE_RATE = 0.05  # 鞋靴类目淘宝扣点 5%
+
+    # ── 1. 订单数据收集 (TRADE_FINISHED + WAIT_BUYER_CONFIRM_GOODS) ──
+    all_trades = []
+    for status in ("TRADE_FINISHED", "WAIT_BUYER_CONFIRM_GOODS"):
+        body, _ = _taobao_get("/trade/list", shop_id,
+                              f"page=1&pagesize=200&status={status}", p)
+        resp = json.loads(body)
+        if resp.get("code") == 0:
+            data_block = resp.get("data", {})
+            trades = data_block.get("data", {}).get("trades", {}).get("trade", [])
+            trades = trades if isinstance(trades, list) else [trades] if trades else []
+            for t in trades:
+                t["_status"] = status
+            all_trades.extend(trades)
+
+    if not all_trades:
+        print("⚠ 无订单数据", file=stdout)
+        result = stdout.getvalue()
+        stdout.close()
+        return result
+
+    # ── 2. 退款数据收集 ──
+    refund_map = {}  # tid → refund_amount
+    for rstatus in ("", "WAIT_SELLER_AGREE", "SUCCESS"):
+        params = f"page=1&pagesize=200"
+        if rstatus:
+            params += f"&status={rstatus}"
+        body, _ = _taobao_get("/refund/receive-list", shop_id, params, p)
+        resp = json.loads(body)
+        if resp.get("code") == 0:
+            data_block = resp.get("data", {})
+            refunds = data_block.get("data", {}).get("refunds", {}).get("refund", [])
+            refunds = refunds if isinstance(refunds, list) else [refunds] if refunds else []
+            for r in refunds:
+                tid = str(r.get("tid", ""))
+                try:
+                    amount = float(r.get("refund_fee", 0))
+                except (ValueError, TypeError):
+                    amount = 0
+                if tid and amount > 0:
+                    refund_map[tid] = refund_map.get(tid, 0) + amount
+
+    # ── 3. 发布记录拿货价匹配 ──
+    purchase_prices = {}  # num_iid → price
+    try:
+        for fname in sorted(os.listdir(RECORDS_DIR)):
+            if not fname.endswith(".csv"):
+                continue
+            fpath = os.path.join(RECORDS_DIR, fname)
+            with open(fpath, newline="", encoding="utf-8") as f:
+                has_price_col = False
+                lines = []
+                for line in f:
+                    lines.append(line.strip())
+                if len(lines) < 2:
+                    continue
+                reader = _csv.DictReader(lines)
+                for row in reader:
+                    niid_raw = row.get("num_iid", "").strip()
+                    price_raw = row.get("purchase_price", row.get("k3_price", "")).strip()
+                    if niid_raw and price_raw and niid_raw not in purchase_prices:
+                        try:
+                            purchase_prices[niid_raw] = float(price_raw)
+                        except ValueError:
+                            pass
+    except Exception:
+        pass  # 无发布记录时降级
+
+    # ── 4. 按 num_iid 聚合 ──
+    product_stats = {}  # num_iid → {revenue, order_count, refund, tid_set, samples, title}
+    for t in all_trades:
+        niid = str(t.get("num_iid", ""))
+        if not niid:
+            continue
+        tid = str(t.get("tid", ""))
+        orders = t.get("orders", {}).get("order", [])
+        orders = orders if isinstance(orders, list) else [orders] if orders else [t]
+        for o in orders:
+            try:
+                payment = float(o.get("payment", 0))
+            except (ValueError, TypeError):
+                payment = 0
+            num = 1
+            try:
+                num = int(o.get("num", 1))
+            except (ValueError, TypeError):
+                num = 1
+            if niid not in product_stats:
+                product_stats[niid] = {
+                    "revenue": 0, "qty": 0, "tid_set": set(), "samples": [], "title": ""
+                }
+            product_stats[niid]["revenue"] += payment
+            product_stats[niid]["qty"] += num
+            product_stats[niid]["tid_set"].add(tid)
+            if not product_stats[niid]["title"] and t.get("title", ""):
+                product_stats[niid]["title"] = t.get("title", "")
+            if len(product_stats[niid]["samples"]) < 3:
+                product_stats[niid]["samples"].append(o)
+
+    # ── 5. 扣除退款 ──
+    total_refund = 0
+    for t in all_trades:
+        tid = str(t.get("tid", ""))
+        if tid in refund_map:
+            niid = str(t.get("num_iid", ""))
+            if niid in product_stats:
+                product_stats[niid]["refund"] = product_stats[niid].get("refund", 0) + refund_map[tid]
+                total_refund += refund_map[tid]
+
+    # ── 6. 构建产品利润列表 ──
+    products = []
+    for niid, stats in product_stats.items():
+        revenue = stats["revenue"]
+        qty = stats["qty"]
+        refund = stats.get("refund", 0)
+        net_revenue = revenue - refund
+
+        purchase_price = purchase_prices.get(niid, 0)
+        cost = purchase_price * qty + net_revenue * PLATFORM_FEE_RATE
+        net_profit = net_revenue - cost
+        profit_rate = round(net_profit / net_revenue * 100, 1) if net_revenue > 0 else 0
+
+        products.append({
+            "num_iid": niid,
+            "title": stats["title"],
+            "revenue": round(net_revenue, 2),
+            "cost": round(cost, 2),
+            "net_profit": round(net_profit, 2),
+            "profit_rate": profit_rate,
+            "qty": qty,
+            "has_purchase_price": purchase_price > 0,
+        })
+
+    products.sort(key=lambda x: x["net_profit"], reverse=True)
+
+    # ── 7. 汇总 ──
+    total_revenue = sum(p["revenue"] for p in products)
+    total_cost = sum(p["cost"] for p in products)
+    total_profit = sum(p["net_profit"] for p in products)
+    total_rate = round(total_profit / total_revenue * 100, 1) if total_revenue > 0 else 0
+    has_missing = any(not p["has_purchase_price"] for p in products)
+
+    # ── 8. 输出 ──
+    print(f"[汇总] 总收入 ¥{total_revenue:,.2f} | 总成本 ¥{total_cost:,.2f} | "
+          f"净利润 ¥{total_profit:,.2f} | 利润率 {total_rate}%", file=stdout)
+    if has_missing:
+        print("⚠ 部分商品缺拿货价(非聚宝发布)，已按 0 计算成本", file=stdout)
+    print(f"▼ 利润排行 (共 {len(products)} 款)\n", file=stdout)
+
+    for i, p in enumerate(products[:30], 1):
+        missing = " ⚠缺拿货价" if not p.get("has_purchase_price") else ""
+        print(f"{i:>2}. [{p['num_iid'][:12]:>12}] {p['title'][:25]:25s} "
+              f"收入 ¥{p['revenue']:>8,.2f}  | 成本 ¥{p['cost']:>8,.2f}  | 净利 ¥{p['net_profit']:>8,.2f}  | "
+              f"{p['profit_rate']:>5.1f}%{missing}", file=stdout)
+
+    result = stdout.getvalue()
+    stdout.close()
+    return result
+
+
 def usage():
     print(f"""用法: python driver.py <命令> [参数...]
 
@@ -1068,6 +1239,7 @@ def usage():
   taobao rate-check <shop_id> [platform]              评价巡检(差评告警)
   taobao title-check <shop_id> [platform]             标题质量巡检
   taobao daily-report <shop_id> [platform]            每日经营日报
+  taobao profit-analysis <shop_id> [platform]          利润分析(每商品净利润排行)
 
 平台:
   k3     - 开山网 (默认)
@@ -1279,6 +1451,8 @@ def _exec_taobao(sub, args):
         cmd_taobao_rate_check(cmd_args[0], platform)
     elif sub == "daily-report":
         cmd_taobao_daily_report(cmd_args[0], platform)
+    elif sub == "profit-analysis":
+        print(cmd_taobao_profit_analysis(cmd_args[0], platform))
 
 
 def main():
