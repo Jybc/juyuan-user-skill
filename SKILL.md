@@ -269,6 +269,39 @@ options: [
 
 
 
+#### 详情页文案链路
+
+**触发词**：`写详情` / `生成详情` / `详情页文案` / `宝贝描述` / `生成描述` / `优化描述`
+
+**阶段 1 — 数据准备：**
+1. `python scripts/driver.py taobao product-detail <shop_id> <num_iid> [platform]`
+   — 获取标题、价格、属性（建议先跑属性补全）、类目 ID
+   — 如果多模态可用，下载主图做场景/色调/模特分析
+
+**阶段 2 — SubAgent 生成：**
+2. 调用 Agent（`subagent_type: general-purpose`），prompt 使用 `agents/desc-generator.md`
+3. 传入 product_data + image_analysis（如有）
+4. SubAgent 按价格档位确定语气 → 生成 5 模块文案（卖点/材质/场景/尺码/搭配）
+
+**阶段 3 — 预览审核：**
+5. `python scripts/gen_apple.py desc <desc_json_file> <商品标题> <output.html>`
+   — 生成淘宝详情页风格的预览 HTML
+6. `present_files` 展示
+7. 每模块用 `AskUserQuestion` 逐项审核：
+```
+header: "详情页审核"
+question: "卖点提炼 {n}/3: \"{selling_point}\""
+options: [
+  {label: "采纳", description: "保留当前文案"},
+  {label: "重新生成", description: "换一个表达方式"},
+  {label: "修改", description: "手动修改文案内容"},
+]
+```
+8. 用户确认后调用 `taobao update-product` 更新 desc 字段
+9. 支持一键采纳全部 / 逐模块调整
+
+
+
 ## 常见问题
 
 - **搜索关键词不够？** 需 ≥ 2 字符，超 20 自动截断。

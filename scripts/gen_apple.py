@@ -475,7 +475,10 @@ def attrs_report_html(attrs_result):
   </table>
   <footer>聚宝 · 属性巡检</footer>
 </body>
-</html>"""def season_calendar_html(calendar_text):
+</html>"""
+
+
+def season_calendar_html(calendar_text):
     """生成选品日历 HTML。calendar_text 为 cmd_taobao_season_calendar() 返回的文本。"""
     import re
 
@@ -600,6 +603,98 @@ def attrs_report_html(attrs_result):
 </html>"""
 
 
+def desc_preview_html(product_title, desc_data):
+    """生成商品详情页预览 HTML。desc_data 为 SubAgent 输出的 JSON 字符串或 dict。"""
+    data = json.loads(desc_data) if isinstance(desc_data, str) else desc_data
+    sections = data.get("sections", {})
+    price_tier = data.get("price_tier", "")
+
+    sp = "".join(f'<div class="sp-item">{s}</div>' for s in sections.get("selling_points", []))
+    mat = sections.get("material", {})
+    mat_html = f"""
+    <div class="mat-item"><span>鞋面</span><span>{mat.get('upper', '—')}</span></div>
+    <div class="mat-item"><span>鞋底</span><span>{mat.get('sole', '—')}</span></div>
+    <div class="mat-item"><span>内里</span><span>{mat.get('lining', '—')}</span></div>
+    """
+    scenes = "".join(f'<span class="scene-tag">{s}</span>' for s in sections.get("scenes", []))
+    outfits = ""
+    for o in sections.get("outfits", []):
+        outfits += f'<div class="outfit-row"><span class="outfit-with">{o["with"]}</span><span class="outfit-arrow">→</span><span class="outfit-style">{o["style"]}</span></div>'
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>详情页预览 — {product_title[:20]}</title>
+<style>
+  *,*::before,*::after {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #1a1a2e; font-size: 14px; padding: 16px;
+  }}
+  h2 {{ font-size: 16px; margin-bottom: 2px; }}
+  .price-tier {{ font-size: 11px; color: #999; margin-bottom: 20px; }}
+  .section {{
+    background: #fff; border-radius: 10px; padding: 14px; margin-bottom: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }}
+  .section h3 {{ font-size: 13px; color: #666; margin-bottom: 10px; font-weight: 600; }}
+  .sp-item {{ font-size: 14px; padding: 4px 0; font-weight: 500; line-height: 1.6; }}
+  .mat-item {{ display: flex; padding: 4px 0; font-size: 13px; }}
+  .mat-item span:first-child {{ width: 50px; color: #999; flex-shrink: 0; }}
+  .scene-tag {{
+    display: inline-block; padding: 4px 10px; margin: 2px 4px;
+    background: #e0f2fe; color: #0369a1; border-radius: 12px; font-size: 12px;
+  }}
+  .size-advice {{ font-size: 13px; line-height: 1.7; color: #444; }}
+  .outfit-row {{ padding: 4px 0; font-size: 13px; }}
+  .outfit-with {{ color: #1a1a2e; font-weight: 500; }}
+  .outfit-arrow {{ color: #ccc; margin: 0 8px; }}
+  .outfit-style {{ color: #888; }}
+  footer {{ text-align: center; padding: 24px 0 40px; font-size: 12px; color: #ccc; }}
+  .buyer-note {{ background: #fef3c7; border-radius: 8px; padding: 10px 14px; font-size: 11px; color: #92400e; }}
+  @media (min-width: 768px) {{ body {{ padding: 24px; max-width: 540px; margin: 0 auto; }} }}
+</style>
+</head>
+<body>
+  <h2>{product_title}</h2>
+  <div class="price-tier">定位: {price_tier}</div>
+
+  <div class="section">
+    <h3>卖点提炼</h3>
+    {sp}
+  </div>
+
+  <div class="section">
+    <h3>材质说明</h3>
+    {mat_html}
+  </div>
+
+  <div class="section">
+    <h3>适用场景</h3>
+    <div>{scenes}</div>
+  </div>
+
+  <div class="section">
+    <h3>尺码建议</h3>
+    <div class="size-advice">{sections.get('size_advice', '—')}</div>
+  </div>
+
+  <div class="section">
+    <h3>搭配推荐</h3>
+    {outfits}
+  </div>
+
+  <div class="buyer-note">
+    温馨提示：因显示��和拍摄光线差异可能存在微小色差。手工测量可能有 1-3mm 误差。支持 7 天无理由退换。
+  </div>
+
+  <footer>聚宝 · 详情页预览</footer>
+</body>
+</html>"""
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "today"
     img_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "k3-images")
@@ -639,6 +734,16 @@ def main():
         else:
             season_raw = sys.stdin.read()
         html = season_calendar_html(season_raw)
+    elif cmd == "desc":
+        data_file = sys.argv[2] if len(sys.argv) > 2 else None
+        product_title = sys.argv[3] if len(sys.argv) > 3 else "商品详情预览"
+        out = sys.argv[4] if len(sys.argv) > 4 else "详情预览.html"
+        if data_file and os.path.exists(data_file):
+            with open(data_file, "r", encoding="utf-8") as f:
+                desc_raw = f.read()
+        else:
+            desc_raw = sys.stdin.read()
+        html = desc_preview_html(product_title, desc_raw)
     else:
         page = int(sys.argv[1]) if len(sys.argv) > 1 else 1
         platform = sys.argv[2] if len(sys.argv) > 2 else "k3"
