@@ -1136,6 +1136,102 @@ def cmd_taobao_set_purchase_price(shop_id, num_iid, price, platform=None):
     print(f"[OK] {num_iid} → ¥{price_val} 写入 purchase_prices.json")
 
 
+def cmd_taobao_business_qa(shop_id, platform=None):
+    """经营问答数据收集：拉取全维度经营数据，供 AI 问答分析。返回结构化 JSON。"""
+    p = platform or DEFAULT_PLATFORM
+    result = {
+        "shop_id": shop_id,
+        "platform": p,
+        "shop_info": None,
+        "product_summary": {},
+        "trade_summary": {},
+        "refund_summary": {},
+        "rate_summary": {},
+        "errors": [],
+    }
+
+    # ── 1. 店铺信息 ──
+    try:
+        body, code = _taobao_get("/shop/seller-info", shop_id, "", p)
+        info = json.loads(body)
+        if info.get("code") == 0:
+            d = info.get("data", {}).get("data", {}) if "data" in info.get("data", {}) else info.get("data", {})
+            result["shop_info"] = {
+                "title": d.get("shop", {}).get("title", ""),
+                "sid": d.get("shop", {}).get("sid", ""),
+            }
+    except Exception as e:
+        result["errors"].append(f"shop-info: {e}")
+
+    # ── 2. 商品概览 ──
+    try:
+        body, _ = _taobao_get("/product/list", shop_id, "page=1&pagesize=1", p)
+        prod = json.loads(body)
+        if prod.get("code") == 0:
+            pc = prod.get("data", {}).get("data", {}).get("total_results", 0)
+        else:
+            pc = 0
+        body, _ = _taobao_get("/product/inventory", shop_id, "page=1&pagesize=1", p)
+        inv = json.loads(body)
+        if inv.get("code") == 0:
+            ic = inv.get("data", {}).get("data", {}).get("total_results", 0)
+        else:
+            ic = 0
+        result["product_summary"] = {"on_sale": pc, "inventory": ic}
+    except Exception as e:
+        result["errors"].append(f"product: {e}")
+
+    # ── 3. 订单概览 (各状态) ──
+    trade_statuses = {
+        "all": "",
+        "wait_ship": "WAIT_SELLER_SEND_GOODS",
+        "wait_confirm": "WAIT_BUYER_CONFIRM_GOODS",
+        "finished": "TRADE_FINISHED",
+    }
+    for key, status_val in trade_statuses.items():
+        try:
+            params = "page=1&pagesize=1"
+            if status_val:
+                params += f"&status={urllib.parse.quote(status_val)}"
+            body, _ = _taobao_get("/trade/list", shop_id, params, p)
+            trade = json.loads(body)
+            if trade.get("code") == 0:
+                n = trade.get("data", {}).get("data", {}).get("total_results", 0)
+            else:
+                n = 0
+            result["trade_summary"][key] = n
+        except Exception as e:
+            result["errors"].append(f"trade({key}): {e}")
+
+    # ── 4. 退款概览 ──
+    try:
+        body, _ = _taobao_get("/refund/receive-list", shop_id, "page=1&pagesize=1", p)
+        ref = json.loads(body)
+        if ref.get("code") == 0:
+            rn = ref.get("data", {}).get("data", {}).get("total_results", 0)
+        else:
+            rn = 0
+        result["refund_summary"]["total"] = rn
+    except Exception as e:
+        result["errors"].append(f"refund: {e}")
+
+    # ── 5. 评价概览 ──
+    try:
+        for rtype, label in [("give", "received"), ("get", "sent")]:
+            body, _ = _taobao_get("/rate/list", shop_id,
+                                  f"rate_type={rtype}&role=seller&page=1&page_size=1", p)
+            rate = json.loads(body)
+            if rate.get("code") == 0:
+                items = rate.get("data", {}).get("data", {}).get("trade_rates", {}).get("trade_rate", [])
+                items = items if isinstance(items, list) else [items] if items else []
+                neg = sum(1 for r in items if r.get("result") in ("neutral", "bad"))
+                result["rate_summary"][label] = {"total": len(items), "negative": neg}
+    except Exception as e:
+        result["errors"].append(f"rate: {e}")
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
 def cmd_taobao_profit_analysis(shop_id, platform=None):
     """利润分析：整合订单+退款+发布记录拿货价+成本配置，计算每件商品净利润"""
     p = platform or DEFAULT_PLATFORM
@@ -1395,6 +1491,7 @@ def usage():
   taobao daily-report <shop_id> [platform]            每日经营日报
   taobao profit-analysis <shop_id> [platform]          利润分析(每商品净利润排行)
   taobao set-purchase-price <shop_id> <num_iid> <price> [platform]  手动设置单商品拿货价
+  taobao business-qa <shop_id> [platform]            经营问答数据收集(全维度JSON)
 
 平台:
   k3     - 开山网 (默认)
@@ -1610,6 +1707,8 @@ def _exec_taobao(sub, args):
         print(cmd_taobao_profit_analysis(cmd_args[0], platform))
     elif sub == "set-purchase-price":
         cmd_taobao_set_purchase_price(cmd_args[0], cmd_args[1], cmd_args[2], platform)
+    elif sub == "business-qa":
+        print(cmd_taobao_business_qa(cmd_args[0], platform))
 
 
 def main():

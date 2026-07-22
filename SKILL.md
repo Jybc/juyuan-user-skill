@@ -181,6 +181,30 @@ options: [
 ]
 ```
 
+#### 经营问答链路
+
+**触发词**：`生意怎么样` / `店铺概况` / `最近如何` / `给点建议` / `店铺诊断` / `经营分析`
+
+当用户用自然语言提问且不匹配其他功能触发词时，执行智能问答：
+
+**阶段 1 — 意图判断：**
+先检查是否匹配已有功能的明确触发词（标题优化/利润分析/SEO诊断/发货/调价等），匹配则走对应链路。不匹配则进入经营问答。
+
+**阶段 2 — 数据收集：**
+1. `python scripts/driver.py taobao business-qa <shop_id> [platform]`
+   — 并行拉取 5 维度概览数据（店铺/商品/订单/退款/评价），返回 JSON
+2. 如有成交数据，追加 `profit-analysis` 获取利润排行和洞察
+
+**阶段 3 — SubAgent 问答：**
+3. 调用 Agent（`subagent_type: general-purpose`），prompt 使用 `agents/business-qa.md`
+4. 传入 business_data(JSON) + profit_data(文本) + user_question
+5. SubAgent 按意图分类 → 数据解读 → 生成回答（卡片+解读+追问）
+
+**阶段 4 — 追问：**
+6. 回答末尾附 2-3 个推荐追问；若为功能触发意图，自动跳转
+
+
+
 ## 常见问题
 
 - **搜索关键词不够？** 需 ≥ 2 字符，超 20 自动截断。

@@ -36,7 +36,7 @@ from driver import (
     cmd_taobao_dashboard, cmd_taobao_daily_report, cmd_taobao_quick_publish,
     cmd_taobao_auto_ship, cmd_taobao_batch_price, cmd_taobao_batch_title,
     cmd_taobao_rate_check, cmd_taobao_title_check, cmd_taobao_generate_titles,
-    cmd_taobao_profit_analysis,
+    cmd_taobao_profit_analysis, cmd_taobao_business_qa,
 )
 import driver  # 用于 patch 模块属性
 
@@ -981,6 +981,91 @@ class TestPurchasePriceMapping(BaseTestCase):
         with open(mapping_file) as f:
             data = json.load(f)
         self.assertEqual(data["999888"], 55.5)
+
+
+class TestBusinessQA(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def _mock_resp(self, body_dict):
+        body = json.dumps({"code": 0, "data": body_dict})
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = body.encode()
+        mock.status = 200
+        return mock
+
+    def test_business_qa_structure(self):
+        """测试 business-qa 返回完整 JSON 结构"""
+        # 10 API calls: shop-seller-info, product-list, product-inventory,
+        #              trade×4, refund, rate×2
+        mocks = [
+            # shop-seller-info
+            self._mock_resp({"data": {"shop": {"title": "test_shop"}}}),
+            # product-list
+            self._mock_resp({"data": {"total_results": 50}}),
+            # product-inventory
+            self._mock_resp({"data": {"total_results": 10}}),
+            # trade/all
+            self._mock_resp({"data": {"total_results": 120}}),
+            # trade/wait_ship
+            self._mock_resp({"data": {"total_results": 5}}),
+            # trade/wait_confirm
+            self._mock_resp({"data": {"total_results": 15}}),
+            # trade/finished
+            self._mock_resp({"data": {"total_results": 100}}),
+            # refund
+            self._mock_resp({"data": {"total_results": 3}}),
+            # rate/received
+            self._mock_resp({"data": {"trade_rates": {"trade_rate": []}}}),
+            # rate/sent
+            self._mock_resp({"data": {"trade_rates": {"trade_rate": []}}}),
+        ]
+        call_idx = [0]
+
+        def mock_urlopen(*args, **kwargs):
+            i = call_idx[0]
+            call_idx[0] = i + 1
+            return mocks[min(i, len(mocks) - 1)]
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            result_json = cmd_taobao_business_qa("556", "k3")
+
+        result = json.loads(result_json)
+        self.assertEqual(result["shop_id"], "556")
+        self.assertEqual(result["platform"], "k3")
+        self.assertEqual(result["shop_info"]["title"], "test_shop")
+        self.assertEqual(result["product_summary"]["on_sale"], 50)
+        self.assertEqual(result["product_summary"]["inventory"], 10)
+        self.assertEqual(result["trade_summary"]["all"], 120)
+        self.assertEqual(result["trade_summary"]["wait_ship"], 5)
+        self.assertEqual(result["trade_summary"]["wait_confirm"], 15)
+        self.assertEqual(result["trade_summary"]["finished"], 100)
+        self.assertEqual(result["refund_summary"]["total"], 3)
+        self.assertEqual(result["rate_summary"]["received"]["total"], 0)
+        self.assertEqual(result["errors"], [])
+
+    def test_business_qa_error_handling(self):
+        """测试 API 异常时的错误收集"""
+        # All API calls fail
+        class FailMock:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            @property
+            def read(self):
+                raise Exception("network error")
+            status = 500
+
+        with unittest.mock.patch("urllib.request.urlopen", return_value=FailMock()):
+            result_json = cmd_taobao_business_qa("556", "k3")
+
+        result = json.loads(result_json)
+        self.assertGreater(len(result["errors"]), 0)
 
 
 if __name__ == "__main__":
