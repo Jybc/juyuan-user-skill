@@ -475,6 +475,128 @@ def attrs_report_html(attrs_result):
   </table>
   <footer>聚宝 · 属性巡检</footer>
 </body>
+</html>"""def season_calendar_html(calendar_text):
+    """生成选品日历 HTML。calendar_text 为 cmd_taobao_season_calendar() 返回的文本。"""
+    import re
+
+    categories = []
+    season_label = ""
+    insights = []
+
+    lines = calendar_text.split("\n") if isinstance(calendar_text, str) else []
+    in_ranking = False
+
+    for line in lines:
+        line = line.strip()
+        # 季节标签
+        m = re.search(r'选品日历\s*·\s*(.+?)\s*─', line)
+        if m:
+            season_label = m.group(1).strip()
+            continue
+        # 品类行: "  ↗↑   单鞋   ██████████████████████████████ 12单 ★重点备货 | 单鞋女"
+        # 格式: trend(4) cat(6) bar(30) sales(3) 单 suggestion keywords
+        m = re.match(r'\s*([↗↑↘↓→\s]{2,4})\s*(\S+?)\s+(█*)\s*(\d+)单\s+(\S+?)(?:\s*\|\s*(.+))?', line)
+        if m:
+            trend = m.group(1).strip()
+            cat = m.group(2).strip()
+            sales = int(m.group(4))
+            suggestion = m.group(5).strip()
+            keywords = m.group(6) or ""
+            categories.append({
+                "trend": trend,
+                "name": cat,
+                "sales": sales,
+                "suggestion": suggestion,
+                "keywords": keywords.strip(),
+            })
+            continue
+        # 推荐行: ★ 推荐关注: ...,  ...
+        if line.startswith("★ 推荐关注"):
+            insights.append({"type": "star", "text": line[2:]})
+        elif line.startswith("⚠"):
+            insights.append({"type": "warn", "text": line})
+        elif line.startswith("  [") and "热搜方向" in line:
+            insights.append({"type": "keywords", "text": line.strip()})
+        elif line.startswith("  选品建议"):
+            insights.append({"type": "tip", "text": line.strip()})
+
+    max_sales = max((c["sales"] for c in categories), default=1)
+
+    # 构建品类趋势条
+    bars = ""
+    for c in categories:
+        pct = int(c["sales"] / max_sales * 100) if max_sales > 0 else 0
+        color = "#22c55e" if "↑" in c["trend"] else "#f59e0b" if "→" in c["trend"] else "#ef4444"
+        kw_tags = ""
+        if c.get("keywords"):
+            for kw in c["keywords"].split()[:2]:
+                kw_tags += f'<span class="kw-tag">{kw}</span>'
+        bars += f"""
+        <div class="trend-row">
+            <span class="trend-icon" style="color:{color}">{c['trend']}</span>
+            <span class="cat-name">{c['name']}</span>
+            <div class="trend-bar"><div class="trend-bar-fill" style="width:{pct}%;background:{color}"></div></div>
+            <span class="trend-count">{c['sales']}单</span>
+            <span class="trend-suggestion">{c['suggestion']}</span>
+            {kw_tags}
+        </div>
+        """
+
+    # 洞察列表
+    insight_html = ""
+    for ins in insights:
+        msg = ins["text"].replace("★", "").replace("⚠", "").strip()
+        if ins["type"] == "star":
+            insight_html += f'<li class="insight-star">★ {msg}</li>\n'
+        elif ins["type"] == "warn":
+            insight_html += f'<li class="insight-warn">⚠ {msg}</li>\n'
+        else:
+            insight_html += f'<li class="insight-info">{msg}</li>\n'
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>选品日历</title>
+<style>
+  *,*::before,*::after {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #1a1a2e; font-size: 14px; padding: 16px;
+  }}
+  h2 {{ font-size: 18px; margin-bottom: 2px; }}
+  .subtitle {{ font-size: 12px; color: #999; margin-bottom: 20px; }}
+  .trend-row {{ display: flex; align-items: center; margin-bottom: 10px; gap: 8px; }}
+  .trend-icon {{ width: 32px; font-size: 13px; text-align: center; font-weight: 700; }}
+  .cat-name {{ width: 56px; font-size: 13px; font-weight: 600; }}
+  .trend-bar {{ flex: 1; height: 22px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }}
+  .trend-bar-fill {{ height: 100%; border-radius: 4px; transition: width 1.0s ease; }}
+  .trend-count {{ width: 40px; font-size: 11px; color: #888; text-align: right; }}
+  .trend-suggestion {{ font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #f1f5f9; }}
+  .kw-tag {{ font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px; }}
+  .insights {{ margin-top: 20px; padding: 16px; background: #fff; border-radius: 12px; }}
+  .insights h3 {{ font-size: 13px; color: #666; margin-bottom: 8px; }}
+  .insights ul {{ list-style: none; padding: 0; }}
+  .insights li {{ padding: 4px 0; font-size: 12px; }}
+  .insight-star {{ color: #16a34a; }}
+  .insight-warn {{ color: #dc2626; }}
+  .insight-info {{ color: #6b7280; }}
+  .legend {{ display: flex; gap: 12px; margin-top: 12px; font-size: 11px; color: #999; }}
+  footer {{ text-align: center; padding: 32px 0 40px; font-size: 12px; color: #ccc; }}
+  @media (min-width: 768px) {{ body {{ padding: 24px; max-width: 720px; margin: 0 auto; }} }}
+</style>
+</head>
+<body>
+  <h2>选品日历</h2>
+  <div class="subtitle">{season_label}</div>
+  {bars}
+  <div class="legend">
+    <span>↗↑ 热度上升</span><span>→ 平稳</span><span>↘↓ 降温</span><span>✦ 热搜词</span>
+  </div>
+  {f'<div class="insights"><h3>行动建议</h3><ul>{insight_html}</ul></div>' if insights else ""}
+  <footer>聚宝 · 选品日历</footer>
+</body>
 </html>"""
 
 
@@ -508,6 +630,15 @@ def main():
         else:
             attrs_raw = sys.stdin.read()
         html = attrs_report_html(attrs_raw)
+    elif cmd == "season":
+        data_file = sys.argv[2] if len(sys.argv) > 2 else None
+        out = sys.argv[3] if len(sys.argv) > 3 else "选品日历.html"
+        if data_file and os.path.exists(data_file):
+            with open(data_file, "r", encoding="utf-8") as f:
+                season_raw = f.read()
+        else:
+            season_raw = sys.stdin.read()
+        html = season_calendar_html(season_raw)
     else:
         page = int(sys.argv[1]) if len(sys.argv) > 1 else 1
         platform = sys.argv[2] if len(sys.argv) > 2 else "k3"

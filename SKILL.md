@@ -238,6 +238,37 @@ options: [
 
 
 
+#### 选品日历链路
+
+**触发词**：`选品日历` / `该上什么了` / `换季选品` / `秋款推荐` / `明年选品` / `什么好卖`
+
+**阶段 1 — 数据收集：**
+1. `python scripts/driver.py taobao season-calendar <shop_id> [platform]`
+   — 拉取成交 + 待收货 + 待发货订单数据
+   — 按标题关键词自动归类品类（凉鞋/拖鞋/单鞋/短靴/高跟鞋/帆布鞋/松糕鞋）
+   — 加载热搜词库 795 词匹配品类趋势
+   — 根据当前月份确定季节窗口和趋势方向
+   — 输出品类趋势条图 + 行动建议
+
+**阶段 2 — 可视化：**
+2. `python scripts/gen_apple.py season <data_file> <output.html>`
+   — 生成移动端友好 HTML（品类趋势条图 + 热搜关键词标签 + 行动建议卡片）
+3. `present_files` 展示
+
+**阶段 3 — 行动：**
+4. 底部提供 `AskUserQuestion` 快捷操作：
+```
+header: "选品行动"
+question: "选哪类产品开始查看？"
+options: [
+  {label: "提前选{{trending_cat}}"， description: "在K3/包牛牛搜索相关关键词"},
+  {label: "查看更多热搜词"， description: "展示完整的热搜词库"},
+  {label: "看看店铺详情"， description: "切换到经营问答看全貌"},
+]
+```
+
+
+
 ## 常见问题
 
 - **搜索关键词不够？** 需 ≥ 2 字符，超 20 自动截断。

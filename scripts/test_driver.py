@@ -38,6 +38,7 @@ from driver import (
     cmd_taobao_auto_ship, cmd_taobao_batch_price, cmd_taobao_batch_title,
     cmd_taobao_rate_check, cmd_taobao_title_check, cmd_taobao_generate_titles,
     cmd_taobao_profit_analysis, cmd_taobao_business_qa,
+    cmd_taobao_season_calendar,
 )
 import driver  # 用于 patch 模块属性
 
@@ -1146,6 +1147,63 @@ class TestAttrsCheck(BaseTestCase):
         self.assertEqual(len(attrs1), 1)
         self.assertEqual(attrs1[0]["name"], "跟型")
         self.assertEqual(call_count[0], 1)  # 第二次命中缓存
+
+
+class TestSeasonCalendar(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def _mock_resp(self, body_dict):
+        body = json.dumps({"code": 0, "data": body_dict})
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = body.encode()
+        mock.status = 200
+        return mock
+
+    def test_season_calendar_basic(self):
+        """测试选品日历基本输出"""
+        trades = [
+            {"title": "一字扣凉鞋女厚底仙女风"},
+            {"title": "包头拖鞋女外穿中跟"},
+            {"title": "马丁靴女秋方头系带"},
+        ]
+        trade_mock = self._mock_resp({"data": {"trades": {"trade": trades}}})
+        # 3 API calls: trade×3 (TRADE_FINISHED, WAIT_BUYER_CONFIRM, WAIT_SELLER_SEND)
+        mocks = [trade_mock, trade_mock, trade_mock]
+
+        call_idx = [0]
+        def mock_urlopen(*args, **kwargs):
+            i = call_idx[0]
+            call_idx[0] = i + 1
+            return mocks[min(i, len(mocks) - 1)]
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            result = cmd_taobao_season_calendar("556", "k3")
+
+        self.assertIn("选品日历", result)
+        self.assertIn("凉鞋", result)
+        self.assertIn("拖鞋", result)
+        self.assertIn("短靴", result)
+
+    def test_season_calendar_no_trades(self):
+        """测试无订单时的选品日历"""
+        trade_mock = self._mock_resp({"data": {"trades": {"trade": []}}})
+        mocks = [trade_mock, trade_mock, trade_mock]
+
+        call_idx = [0]
+        def mock_urlopen(*args, **kwargs):
+            i = call_idx[0]
+            call_idx[0] = i + 1
+            return mocks[min(i, len(mocks) - 1)]
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            result = cmd_taobao_season_calendar("556", "k3")
+
+        self.assertIn("选品日历", result)
 
 
 if __name__ == "__main__":

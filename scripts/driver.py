@@ -1251,6 +1251,142 @@ def cmd_taobao_set_purchase_price(shop_id, num_iid, price, platform=None):
     print(f"[OK] {num_iid} → ¥{price_val} 写入 purchase_prices.json")
 
 
+def cmd_taobao_season_calendar(shop_id, platform=None):
+    """季节选品日历：分析品类销售趋势 + 热搜词季节性，推荐未来选品方向。"""
+    from datetime import datetime as _dt
+
+    p = platform or DEFAULT_PLATFORM
+    out = stdout = io.StringIO()
+    current_month = _dt.now().month
+
+    print(f"=== 选品日历 (shop_id={shop_id}, {p}) ===\n", file=stdout)
+
+    # ── 1. 品类 × 关键词映射表 ──
+    CATEGORY_KEYWORDS = {
+        "凉鞋": ["凉鞋", "凉拖", "一字扣凉鞋", "露趾"],
+        "拖鞋": ["拖鞋", "一字拖", "人字拖", "凉拖", "外穿拖鞋"],
+        "单鞋": ["单鞋", "浅口", "乐福鞋", "芭蕾鞋", "尖头鞋", "平底鞋"],
+        "短靴": ["短靴", "马丁靴", "切尔西靴", "靴子", "中跟靴"],
+        "高跟鞋": ["高跟鞋", "细跟", "粗跟"],
+        "帆布鞋": ["帆布鞋", "布鞋"],
+        "松糕鞋": ["松糕", "厚底", "增高"],
+    }
+
+    # 季节趋势（按月份）
+    if 3 <= current_month <= 4:
+        season_label = "春季 · 换季期"
+        trends = {"单鞋": "↗↑", "帆布鞋": "↗↑", "高跟鞋": "↗", "凉鞋": "↗", "拖鞋": "→", "短��": "↓"}
+    elif 5 <= current_month <= 6:
+        season_label = "夏季 · 旺季"
+        trends = {"凉鞋": "↑↑", "拖鞋": "↑↑", "帆布鞋": "↑", "高跟鞋": "→", "单鞋": "→", "短靴": "↓"}
+    elif 7 <= current_month <= 8:
+        season_label = "盛夏 · 顶峰"
+        trends = {"凉鞋": "→→", "拖鞋": "→→", "帆布鞋": "→", "松糕鞋": "↗", "单鞋": "↘", "高跟鞋": "↘"}
+    elif 9 <= current_month <= 10:
+        season_label = "秋季 · 换季期"
+        trends = {"短靴": "↗↑", "单鞋": "↗↑", "松糕鞋": "↗", "帆布鞋": "↗", "凉鞋": "↓", "拖鞋": "↓"}
+    elif 11 <= current_month <= 12:
+        season_label = "冬季 · 旺季"
+        trends = {"短靴": "↑↑", "马丁靴": "���↑", "单鞋": "→", "松糕鞋": "→"}
+    else:
+        season_label = "冬末 · 淡季"
+        trends = {"单鞋": "↗", "帆布鞋": "↗", "短靴": "→", "凉鞋": "↘"}
+
+    # ── 2. 收集销售数据 ──
+    category_sales = {cat: 0 for cat in CATEGORY_KEYWORDS}
+    all_trades = []
+
+    for status in ("TRADE_FINISHED", "WAIT_BUYER_CONFIRM_GOODS", "WAIT_SELLER_SEND_GOODS"):
+        try:
+            body, _ = _taobao_get("/trade/list", shop_id,
+                                  f"page=1&pagesize=200&status={status}", p)
+            resp = json.loads(body)
+            if resp.get("code") == 0:
+                data_block = resp.get("data", {})
+                trades = data_block.get("data", {}).get("trades", {}).get("trade", [])
+                trades = trades if isinstance(trades, list) else [trades] if trades else []
+                all_trades.extend(trades)
+        except Exception:
+            pass
+
+    # 按标题关键词归类
+    for t in all_trades:
+        title = t.get("title", "")
+        for cat, keywords in CATEGORY_KEYWORDS.items():
+            if any(kw in title for kw in keywords):
+                category_sales[cat] += 1
+                break
+
+    # ── 3. 加载热搜词库 ──
+    hot_keywords = {}
+    kw_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "..", "references", "api", "taobao", "shoe-hot-keywords.json")
+    try:
+        with open(kw_path, "r", encoding="utf-8") as f:
+            hot_data = json.load(f)
+        # 统一品类名映射
+        kw_category_map = {
+            "凉鞋": "凉鞋", "拖鞋": "拖鞋", "帆布鞋": "帆布鞋",
+            "高跟鞋": "高跟鞋", "单鞋": "单鞋", "松糕鞋": "松糕鞋",
+            "靴子": "短靴", "靴子大组": "短靴", "罗马鞋": "高跟鞋",
+        }
+        for raw_cat, words in hot_data.items():
+            mapped = kw_category_map.get(raw_cat, raw_cat)
+            if mapped not in hot_keywords:
+                hot_keywords[mapped] = []
+            hot_keywords[mapped].extend(words[:5])  # 每类取前5
+    except Exception:
+        pass
+
+    # ── 4. 输出 ──
+    print(f"┌─ 选品日历 · {season_label} ───────────────────────────┐", file=stdout)
+
+    # 按销量排序
+    ranked = sorted(category_sales.items(), key=lambda x: x[1], reverse=True)
+    max_sales = max(s for _, s in ranked) if ranked else 1
+
+    for cat, sales in ranked:
+        trend = trends.get(cat, "—")
+        bar_len = int(sales / max_sales * 30) if max_sales > 0 else 0
+        bar = "█" * bar_len
+
+        suggestion = ""
+        if trend in ("↑↑", "↗↑"):
+            suggestion = "★重点备货"
+        elif trend in ("↗", "→→", "→"):
+            suggestion = "正常节奏"
+        elif trend in ("↘", "↓↓", "↓"):
+            suggestion = "减量/清仓"
+
+        # 热搜词预览
+        kw_preview = ""
+        if cat in hot_keywords and hot_keywords[cat]:
+            kw_preview = " | " + " ".join(hot_keywords[cat][:3])
+
+        print(f"  {trend:4s} {cat:6s} {bar}{sales:>3}单 {suggestion}{kw_preview}", file=stdout)
+
+    print(f"└{'─'*50}┘\n", file=stdout)
+
+    # 推荐行动
+    top_trending = [cat for cat, trend in trends.items() if trend in ("↗↑", "↑↑")]
+    if top_trending:
+        print("★ 推荐关注:", ", ".join(top_trending), file=stdout)
+        # 检查是否有热搜词
+        for cat in top_trending:
+            if cat in hot_keywords and hot_keywords[cat]:
+                print(f"  [{cat}] 热搜方向: {', '.join(hot_keywords[cat][:5])}", file=stdout)
+        print(f"  选品建议: 在K3/包牛牛搜索以上关键词开始选品", file=stdout)
+
+    # 减量提醒
+    cooling = [cat for cat, trend in trends.items() if trend in ("↓", "↓↓")]
+    if cooling:
+        print(f"\n⚠ 降温品类: {', '.join(cooling)} — 建议减少进货，清库存", file=stdout)
+
+    result = stdout.getvalue()
+    stdout.close()
+    return result
+
+
 def cmd_taobao_business_qa(shop_id, platform=None):
     """经营问答数据收集：拉取全维度经营数据，供 AI 问答分析。返回结构化 JSON。"""
     p = platform or DEFAULT_PLATFORM
@@ -1608,6 +1744,7 @@ def usage():
   taobao set-purchase-price <shop_id> <num_iid> <price> [platform]  手动设置单商品拿货价
   taobao business-qa <shop_id> [platform]            经营问答数据收集(全维度JSON)
   taobao attrs-check <shop_id> [platform]            属性补全检查(缺失属性+合法值枚举)
+  taobao season-calendar <shop_id> [platform]        季节选品日历(品类趋势+热搜推荐)
 
 平台:
   k3     - 开山网 (默认)
@@ -1827,6 +1964,8 @@ def _exec_taobao(sub, args):
         print(cmd_taobao_business_qa(cmd_args[0], platform))
     elif sub == "attrs-check":
         print(cmd_taobao_attrs_check(cmd_args[0], platform))
+    elif sub == "season-calendar":
+        print(cmd_taobao_season_calendar(cmd_args[0], platform))
 
 
 def main():
