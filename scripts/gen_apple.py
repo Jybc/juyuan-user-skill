@@ -214,13 +214,16 @@ def profit_board_html(profit_data, shop_name=""):
     products = []
     summary = {}
     has_missing = False
+    insights = []
 
     # 解析 profit-analysis 文本输出为结构化数据
     lines = profit_data.split("\n") if isinstance(profit_data, str) else []
     in_ranking = False
+    in_insights = False
     for line in lines:
         line = line.strip()
-        # 汇总行: [汇总] 总收入 ¥xxx | 总成本 ¥xxx | 净利润 ¥xxx | 利润率 xx%
+
+        # 汇总行
         m = re.match(r'\[汇总\]\s*总收入\s*¥([\d,]+\.?\d*)\s*\|\s*总成本\s*¥([\d,]+\.?\d*)\s*\|\s*净利润\s*¥([\d,]+\.?\d*)\s*\|\s*利润率\s*([\d.]+)%', line)
         if m:
             summary = {
@@ -232,13 +235,25 @@ def profit_board_html(profit_data, shop_name=""):
             continue
         if "缺拿货价" in line:
             has_missing = True
+        if "经营洞察" in line:
+            in_ranking = False
+            in_insights = True
+            continue
+        if in_insights:
+            if line and not line.startswith("═══"):
+                # Clean up icon prefixes for display
+                clean = re.sub(r'^[★●○⚠]\s*', '', line)
+                insights.append(clean)
+            continue
         if "利润排行" in line:
             in_ranking = True
             continue
         if not in_ranking:
             continue
-        # 排行行: " 1. [1001] 凉鞋    收入 ¥1,280 | 成本 ¥500 | 净利 ¥780 | 60.0%"
-        m = re.match(r'\s*(\d+)\.\s*\[([^\]]+)\]\s*(.+?)\s*收入\s*¥([\d,]+\.?\d*)\s*\|\s*成本\s*¥([\d,]+\.?\d*)\s*\|\s*净利\s*¥([\d,]+\.?\d*)\s*\|\s*([\d.]+)%', line)
+
+        # 排行行: "★ 1. [1001] 凉鞋    收入 ¥1,280 | 成本 ¥500 | 净利 ¥780 | 60.0%"
+        # 现在有图标前缀 (★/●/○/⚠)
+        m = re.match(r'\s*[★●○⚠]?\s*(\d+)\.\s*\[([^\]]+)\]\s*(.+?)\s*收入\s*¥([\d,]+\.?\d*)\s*\|\s*成本\s*¥([\d,]+\.?\d*)\s*\|\s*净利\s*¥([\d,]+\.?\d*)\s*\|\s*([\d.]+)%', line)
         if m:
             products.append({
                 "rank": int(m.group(1)),
@@ -255,10 +270,11 @@ def profit_board_html(profit_data, shop_name=""):
     rows = ""
     for p in products:
         css_class = "profit-positive" if p["profit_rate"] >= 30 else "profit-warn" if p["profit_rate"] < 20 else "profit-neutral"
+        icon = "★" if p["profit_rate"] >= 30 else "○" if p["profit_rate"] >= 20 else "⚠"
         missing_tag = ' <span class="missing-badge">缺拿货价</span>' if p.get("has_missing") else ""
         rows += f"""
         <tr>
-            <td class="rank">#{p['rank']}</td>
+            <td class="rank">{icon} #{p['rank']}</td>
             <td class="product-name">{p['title'][:30]}{missing_tag}</td>
             <td class="money">¥{p['revenue']:,.2f}</td>
             <td class="money">¥{p['cost']:,.2f}</td>
@@ -266,6 +282,18 @@ def profit_board_html(profit_data, shop_name=""):
             <td class="rate {css_class}">{p['profit_rate']:.1f}%</td>
         </tr>
         """
+
+    # 洞察列表
+    insight_html = ""
+    for ins in insights:
+        css = ""
+        if ins.startswith("★"):
+            css = "insight-star"
+        elif ins.startswith("⚠"):
+            css = "insight-warn"
+        elif ins.startswith("[提示]"):
+            css = "insight-tip"
+        insight_html += f'<li class="{css}">{ins}</li>\n'
 
     shop_label = f"{shop_name} · " if shop_name else ""
     return f"""<!DOCTYPE html>
@@ -322,6 +350,19 @@ def profit_board_html(profit_data, shop_name=""):
     margin-top: 16px; padding: 10px 14px; background: #fef3c7; border-radius: 8px;
     font-size: 12px; color: #92400e;
   }}
+  .insights-section {{
+    margin-top: 16px; padding: 16px; background: var(--card-bg);
+    border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }}
+  .insights-section h3 {{ font-size: 14px; color: #666; margin-bottom: 10px; }}
+  .insights-section ul {{ list-style: none; padding: 0; }}
+  .insights-section li {{
+    padding: 6px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5;
+  }}
+  .insights-section li:last-child {{ border-bottom: none; }}
+  .insight-star {{ color: #16a34a; }}
+  .insight-warn {{ color: #dc2626; }}
+  .insight-tip {{ color: #6b7280; font-size: 12px; }}
   footer {{ text-align: center; padding: 24px 0 40px; font-size: 12px; color: #ccc; }}
   /* ── 桌面端 ── */
   @media (min-width: 768px) {{
@@ -360,6 +401,10 @@ def profit_board_html(profit_data, shop_name=""):
     </table>
   </div>
   {"<div class='missing-hint'>⚠ 标注「缺拿货价」的商品来自手工上架，未匹配到批发价。<br>通过聚宝发布的商品可自动追溯拿货价。</div>" if has_missing else ""}
+  {f'''  <div class="insights-section">
+    <h3>经营洞察</h3>
+    <ul>{insight_html}</ul>
+  </div>''' if insights else ""}
   <footer>聚宝 · 利润分析</footer>
 </body>
 </html>"""

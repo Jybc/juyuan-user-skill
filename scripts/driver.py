@@ -1273,13 +1273,63 @@ def cmd_taobao_profit_analysis(shop_id, platform=None):
           f"净利润 ¥{total_profit:,.2f} | 利润率 {total_rate}%", file=stdout)
     if has_missing:
         print("⚠ 部分商品缺拿货价(非聚宝发布)，已按 0 计算成本", file=stdout)
+    if packing_cost > 0 or ad_daily_cost > 0:
+        parts = []
+        if packing_cost > 0:
+            parts.append(f"包装费 ¥{packing_cost}/单")
+        if ad_daily_cost > 0:
+            parts.append(f"广告日均 ¥{ad_daily_cost}")
+        print(f"[成本] 已计入: {', '.join(parts)}", file=stdout)
     print(f"▼ 利润排行 (共 {len(products)} 款)\n", file=stdout)
 
     for i, p in enumerate(products[:30], 1):
+        # 利润率分级图标
+        if p["profit_rate"] >= 50:
+            icon = "★"
+        elif p["profit_rate"] >= 30:
+            icon = "●"
+        elif p["profit_rate"] >= 20:
+            icon = "○"
+        else:
+            icon = "⚠"
         missing = " ⚠缺拿货价" if not p.get("has_purchase_price") else ""
-        print(f"{i:>2}. [{p['num_iid'][:12]:>12}] {p['title'][:25]:25s} "
+        print(f"{icon}{i:>2}. [{p['num_iid'][:12]:>12}] {p['title'][:25]:25s} "
               f"收入 ¥{p['revenue']:>8,.2f}  | 成本 ¥{p['cost']:>8,.2f}  | 净利 ¥{p['net_profit']:>8,.2f}  | "
               f"{p['profit_rate']:>5.1f}%{missing}", file=stdout)
+
+    # ── 9. 洞察摘要 ──
+    print(f"\n═══ 经营洞察 ═══", file=stdout)
+
+    # 前3名贡献
+    top_n = min(3, len(products))
+    top_profit = sum(p["net_profit"] for p in products[:top_n])
+    top_share = (top_profit / total_profit * 100) if total_profit > 0 else 0
+    print(f"★ 前 {top_n} 名贡献了全店 {top_share:.0f}% 的利润", file=stdout)
+
+    top_names = "、".join(p["title"][:12] for p in products[:top_n])
+    print(f"  核心品: {top_names}", file=stdout)
+
+    # 亏损/低利润品
+    low_products = [p for p in products if p["profit_rate"] < 20]
+    if low_products:
+        low_total = sum(p["net_profit"] for p in low_products)
+        low_names = "、".join(p["title"][:12] for p in low_products)
+        print(f"⚠ {len(low_products)} 款利润率 < 20%，合计 {'盈利' if low_total > 0 else '亏损'} ¥{abs(low_total):,.2f}", file=stdout)
+        print(f"  关注: {low_names}", file=stdout)
+        if low_total <= 0:
+            print(f"  建议: 提价或淘汰这些品", file=stdout)
+        else:
+            print(f"  建议: 查看是否可压缩成本或提价", file=stdout)
+
+    # 退款亏损品
+    refund_products = [p for p in products if p.get("refund", 0) > p["revenue"] * 0.1]
+    if refund_products:
+        print(f"⚠ 退款率偏高的品 (退款>10%收入): {len(refund_products)} 款", file=stdout)
+
+    # 拿货价缺失提示
+    missing_products = [p for p in products if not p.get("has_purchase_price")]
+    if missing_products:
+        print(f"[提示] {len(missing_products)} 款缺拿货价，使用 `set-purchase-price` 命令录入可提高精度", file=stdout)
 
     result = stdout.getvalue()
     stdout.close()

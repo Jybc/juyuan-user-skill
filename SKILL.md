@@ -143,12 +143,23 @@ options: [
 ```
 5. 选择「包含」则引导输入月均广告费，存为 `COST_AD_DAILY=xxx`（日均可分配）
 
+**手动录入拿货价**：对于通过发布记录无法自动匹配拿货价的商品，可使用命令：
+```
+python scripts/driver.py taobao set-purchase-price <shop_id> <num_iid> <价格>
+```
+将 num_iid→价格映射写入 `~/.config/k3-publish/records/purchase_prices.json`，后续利润分析自动读取。
+
 **阶段 1 — 数据收集：**
 1. `python scripts/driver.py taobao profit-analysis <shop_id> [platform]`
    — 拉取 TRADE_FINISHED + WAIT_BUYER_CONFIRM_GOODS 订单
    — 拉取退款数据
-   — 匹配发布记录 CSV 中的拿货价
-   — 输出结构化文本（收入/成本/净利/利润率排行）
+   — 匹配发布记录 JSON 中的拿货价（发布记录 + `purchase_prices.json` 手动映射）
+   — 已配置的包装费/广告费自动纳入成本计算
+   — 输出结构化文本：汇总卡片 + 利润率排行表 + **经营洞察摘要**
+     · 前 3 名利润贡献比 + 核心品名
+     · 低利润/亏损品告警 + 优化建议
+     · 退款异常品标记
+     · 缺拿货价商品提示
 
 **阶段 2 — 可视化展示：**
 2. `python scripts/gen_apple.py profit <profit_data_file> <shop_name> <output.html>`
