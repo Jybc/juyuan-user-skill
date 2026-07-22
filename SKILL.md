@@ -205,6 +205,39 @@ options: [
 
 
 
+#### 属性补全链路
+
+**触发���**：`检查属性` / `属性补全` / `属性巡检` / `补齐属性` / `全店属性巡检`
+
+**阶段 1 — 数据收集：**
+1. `python scripts/driver.py taobao attrs-check <shop_id> [platform]`
+   — 拉取在售商品列表 → 逐件获取详情 (title/cid/props)
+   — 通过 `taobao.itemprops.get` API 获取各类目合法属性枚举（24h 缓存）
+   — 对比已有属性 vs 合法属性��找出缺失项
+   — 返回结构化 JSON（缺失属性 + 候选值列表）
+
+**阶段 2 — SubAgent 推理：**
+2. 调用 Agent（`subagent_type: general-purpose`），prompt 使用 `agents/attrs-infer.md`
+3. 传入阶段 1 的 JSON 结果
+4. SubAgent 按标题语义提取 → 枚���值匹配 → 给出建议值和置信度
+5. 如果多模态可用，下载主图做视觉验证
+
+**阶段 3 — 审核执行：**
+6. 展示属性补全报告 HTML（`gen_apple.py attrs` 模式）
+7. 每条缺失属性用 `AskUserQuestion` 逐项确认：
+```
+header: "属性补全 {n}/{total}"
+question: "【{num_iid}】{title}\n缺失: {attr_name} → 建议: {suggested_value} ({confidence}%)"
+options: [
+  {label: "采纳", description: "更新属性"},
+  {label: "跳过", description: "保持原样"},
+]
+```
+8. 采纳时调用 `taobao update-product` 更新 props 字段
+9. 支持底部批量操作：一键采纳高置信度(>85%) / 跳过全部
+
+
+
 ## 常见问题
 
 - **搜索关键词不够？** 需 ≥ 2 字符，超 20 自动截断。

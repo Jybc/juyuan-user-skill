@@ -19,7 +19,8 @@ from driver import (
     cmd_publish, cmd_jobs, cmd_records, cmd_record_list, cmd_record_export,
     _resolve_platform, ensure_dirs, prompt_api_key, usage,
     _load_cost_config, _load_purchase_price_mapping,
-    cmd_taobao_set_purchase_price,
+    cmd_taobao_set_purchase_price, cmd_taobao_attrs_check,
+    _get_category_attrs,
     # taobao 单命令
     cmd_taobao_shop_info, cmd_taobao_seller_info, cmd_taobao_user_info,
     cmd_taobao_product_list, cmd_taobao_product_inventory, cmd_taobao_product_detail,
@@ -1066,6 +1067,85 @@ class TestBusinessQA(BaseTestCase):
 
         result = json.loads(result_json)
         self.assertGreater(len(result["errors"]), 0)
+
+
+class TestAttrsCheck(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+        # 清空类目属性缓存
+        import driver as d
+        d._ATTRS_CACHE.clear()
+
+    def _mock_resp(self, body_dict):
+        body = json.dumps({"code": 0, "data": body_dict})
+        mock = unittest.mock.MagicMock()
+        mock.__enter__ = unittest.mock.MagicMock(return_value=mock)
+        mock.__exit__ = unittest.mock.MagicMock(return_value=False)
+        mock.read.return_value = body.encode()
+        mock.status = 200
+        return mock
+
+    def test_attrs_check_empty_shop(self):
+        """测试无在售商品时的降级处理"""
+        product_mock = self._mock_resp({"data": {"items": {"item": []}}})
+        with unittest.mock.patch("urllib.request.urlopen", return_value=product_mock):
+            result_json = cmd_taobao_attrs_check("556", "k3")
+        result = json.loads(result_json)
+        self.assertIn("errors", result)
+
+    def test_attrs_check_with_product(self):
+        """测试有在售商品的属性检查"""
+        # 2 API calls: product-list, product-detail
+        mocks = [
+            # product-list
+            self._mock_resp({"data": {"items": {"item": [
+                {"num_iid": "1001", "title": "一字扣凉鞋女厚底"}
+            ]}}}),
+            # product-detail
+            self._mock_resp({"data": {"num_iid": "1001", "title": "一字扣凉鞋女厚底",
+                                      "cid": 50012025, "props_name": "品牌:XYZ"}}),
+        ]
+        call_idx = [0]
+
+        def mock_urlopen(*args, **kwargs):
+            i = call_idx[0]
+            call_idx[0] = i + 1
+            return mocks[min(i, len(mocks) - 1)]
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            result_json = cmd_taobao_attrs_check("556", "k3")
+
+        result = json.loads(result_json)
+        self.assertIn("products", result)
+        if result["products"]:
+            p = result["products"][0]
+            self.assertEqual(p["num_iid"], "1001")
+            self.assertIn("existing_attrs", p)
+            # 品牌已经存在
+            self.assertEqual(p["existing_attrs"].get("品牌"), "XYZ")
+
+    def test_category_attrs_cache(self):
+        """测试类目属性 API 缓存"""
+        attr_mock = self._mock_resp({"data": {"item_props": {"item_prop": [
+            {"pid": "20000", "name": "跟型", "prop_values": {"prop_value": [
+                {"name": "平底"}, {"name": "松糕底"}
+            ]}}
+        ]}}})
+        call_count = [0]
+
+        def mock_urlopen(*args, **kwargs):
+            call_count[0] += 1
+            return attr_mock
+
+        with unittest.mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            attrs1 = _get_category_attrs(50012025, "k3")
+            attrs2 = _get_category_attrs(50012025, "k3")
+
+        self.assertEqual(len(attrs1), 1)
+        self.assertEqual(attrs1[0]["name"], "跟型")
+        self.assertEqual(call_count[0], 1)  # 第二次命中缓存
 
 
 if __name__ == "__main__":

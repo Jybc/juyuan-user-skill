@@ -410,6 +410,74 @@ def profit_board_html(profit_data, shop_name=""):
 </html>"""
 
 
+def attrs_report_html(attrs_result):
+    """生成属性补全报告 HTML。attrs_result 为 cmd_taobao_attrs_check() 返回的 JSON 字符串或 dict。"""
+    data = json.loads(attrs_result) if isinstance(attrs_result, str) else attrs_result
+    products = data.get("products", [])
+
+    rows = ""
+    missing_count = 0
+    for p in products:
+        niid = p.get("num_iid", "")[-8:]
+        title = p.get("title", "")[:25]
+        existing = p.get("existing_attrs", {})
+        existing_str = ", ".join(f"{k}:{v}" for k, v in existing.items()) if existing else "无"
+
+        for attr in p.get("missing_attrs", []):
+            missing_count += 1
+            values_preview = ", ".join(attr.get("valid_values", [])[:5])
+            rows += f"""
+            <tr>
+                <td class="pid">{niid}</td>
+                <td class="title-cell">{title}</td>
+                <td class="existing">{existing_str}</td>
+                <td class="missing-attr">{attr['attr_name']}</td>
+                <td class="values">{values_preview}{' ...' if len(attr.get('valid_values', [])) > 5 else ''}</td>
+            </tr>
+            """
+
+    if not rows:
+        rows = '<tr><td colspan="5" class="empty-msg">所有商品属性完整，无需补全</td></tr>'
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>属性补全报告</title>
+<style>
+  *,*::before,*::after {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #1a1a2e; font-size: 14px; padding: 16px;
+  }}
+  h2 {{ font-size: 18px; margin-bottom: 4px; }}
+  .subtitle {{ font-size: 12px; color: #999; margin-bottom: 16px; }}
+  table {{ width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }}
+  th {{ background: #f8f9fc; padding: 10px 8px; font-size: 11px; color: #888; text-align: left; }}
+  td {{ padding: 10px 8px; border-bottom: 1px solid #f1f1f1; font-size: 12px; }}
+  .pid {{ font-family: monospace; color: #999; }}
+  .title-cell {{ font-weight: 600; }}
+  .existing {{ color: #6b7280; font-size: 11px; }}
+  .missing-attr {{ color: #dc2626; font-weight: 600; }}
+  .values {{ color: #6b7280; font-size: 11px; }}
+  .empty-msg {{ text-align: center; padding: 20px; color: #999; }}
+  footer {{ text-align: center; padding: 24px 0 40px; font-size: 12px; color: #ccc; }}
+  @media (min-width: 768px) {{ body {{ padding: 24px; max-width: 960px; margin: 0 auto; }} }}
+</style>
+</head>
+<body>
+  <h2>属性补全报告</h2>
+  <div class="subtitle">共 {len(products)} 件商品 · {missing_count} 处属性缺失</div>
+  <table>
+    <tr><th>商品ID</th><th>标题</th><th>已有属性</th><th>缺失属性</th><th>候选值</th></tr>
+    {rows}
+  </table>
+  <footer>聚宝 · 属性巡检</footer>
+</body>
+</html>"""
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "today"
     img_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "k3-images")
@@ -431,6 +499,15 @@ def main():
         else:
             profit_raw = sys.stdin.read()
         html = profit_board_html(profit_raw, shop_name)
+    elif cmd == "attrs":
+        data_file = sys.argv[2] if len(sys.argv) > 2 else None
+        out = sys.argv[3] if len(sys.argv) > 3 else "属性补全报告.html"
+        if data_file and os.path.exists(data_file):
+            with open(data_file, "r", encoding="utf-8") as f:
+                attrs_raw = f.read()
+        else:
+            attrs_raw = sys.stdin.read()
+        html = attrs_report_html(attrs_raw)
     else:
         page = int(sys.argv[1]) if len(sys.argv) > 1 else 1
         platform = sys.argv[2] if len(sys.argv) > 2 else "k3"

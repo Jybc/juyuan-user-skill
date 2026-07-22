@@ -1111,6 +1111,121 @@ def _load_purchase_price_mapping():
     return mapping
 
 
+# 类目属性缓存: {cid: {"attrs": [...], "expires": timestamp}}
+_ATTRS_CACHE = {}
+
+def _get_category_attrs(cid, platform=DEFAULT_PLATFORM):
+    """通过淘宝类目属性 API 获取指定 cid 下的属性和属性值，带 24h 缓存。"""
+    now = time.time()
+    cid_str = str(cid)
+
+    if cid_str in _ATTRS_CACHE and _ATTRS_CACHE[cid_str].get("expires", 0) > now:
+        return _ATTRS_CACHE[cid_str]["attrs"]
+
+    try:
+        body, _ = _taobao_get("/itemprops/get", "", f"cid={cid_str}", platform)
+        data = json.loads(body)
+        if data.get("code") == 0:
+            attrs = data.get("data", {}).get("data", {}).get("item_props", {}).get("item_prop", [])
+            attrs = attrs if isinstance(attrs, list) else [attrs] if attrs else []
+        else:
+            attrs = []
+    except Exception:
+        attrs = []
+
+    _ATTRS_CACHE[cid_str] = {"attrs": attrs, "expires": now + 86400}
+    return attrs
+
+
+def cmd_taobao_attrs_check(shop_id, platform=None):
+    """属性补全检查：逐件分析在售商品缺失属性并获取合法属性值枚举。返回 JSON。"""
+    p = platform or DEFAULT_PLATFORM
+    result = {"shop_id": shop_id, "products": [], "errors": []}
+
+    # 1. 获取在售商品列表
+    try:
+        body, _ = _taobao_get("/product/list", shop_id, "page=1&pagesize=50", p)
+        products = json.loads(body)
+        if products.get("code") == 0:
+            items = products.get("data", {}).get("data", {}).get("items", {}).get("item", [])
+            items = items if isinstance(items, list) else [items] if items else []
+        else:
+            items = []
+    except Exception as e:
+        result["errors"].append(f"product-list: {e}")
+        return json.dumps(result, ensure_ascii=False)
+
+    if not items:
+        result["errors"].append("无在售商品")
+        return json.dumps(result, ensure_ascii=False)
+
+    # 2. 逐件获取详情
+    for item in items:
+        niid = str(item.get("num_iid", ""))
+        title = item.get("title", "")[:60]
+        if not niid:
+            continue
+
+        product_entry = {
+            "num_iid": niid,
+            "title": title,
+            "existing_attrs": {},
+            "missing_attrs": [],
+            "cid": None,
+        }
+
+        try:
+            body, _ = _taobao_get("/product/detail", shop_id, f"num_iid={niid}", p)
+            detail = json.loads(body)
+            if detail.get("code") == 0:
+                d = detail.get("data", {}).get("data", {}) if "data" in detail.get("data", {}) else detail.get("data", {})
+                cid = d.get("cid", "")
+                props_str = d.get("props_name", "") or d.get("props", "") or ""
+            else:
+                result["errors"].append(f"detail {niid}: {detail.get('msg','')}")
+                continue
+        except Exception as e:
+            result["errors"].append(f"detail {niid}: {e}")
+            continue
+
+        product_entry["cid"] = str(cid) if cid else None
+
+        # 解析已有属性
+        existing = {}
+        if props_str and ":" in str(props_str):
+            for pair in str(props_str).split(";"):
+                if ":" in pair:
+                    k, v = pair.split(":", 1)
+                    existing[k.strip()] = v.strip()
+        product_entry["existing_attrs"] = existing
+
+        # 3. 获取该类目合法属性
+        if cid:
+            valid_attrs = _get_category_attrs(cid, p)
+            for attr in valid_attrs:
+                attr_name = attr.get("name", "")
+                if not attr_name or attr_name in existing:
+                    continue
+                # 过滤属性值为纯数字的 pid（可能是自定义属性）
+                values = attr.get("prop_values", {}).get("prop_value", [])
+                if isinstance(values, dict):
+                    values = [values]
+                values = [v.get("name", "") for v in values if v.get("name")]
+                if not values:
+                    continue
+                product_entry["missing_attrs"].append({
+                    "attr_name": attr_name,
+                    "attr_pid": attr.get("pid", ""),
+                    "valid_values": values[:20],  # 限 20 个减少数据量
+                })
+
+        result["products"].append(product_entry)
+        if len(product_entry["missing_attrs"]) == 0:
+            result["products"] = result["products"][:-1]  # 移除无缺失的
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
 def cmd_taobao_set_purchase_price(shop_id, num_iid, price, platform=None):
     """手动设置商品拿货价，写入 purchase_prices.json 映射文件。"""
     p = platform or DEFAULT_PLATFORM
@@ -1492,6 +1607,7 @@ def usage():
   taobao profit-analysis <shop_id> [platform]          利润分析(每商品净利润排行)
   taobao set-purchase-price <shop_id> <num_iid> <price> [platform]  手动设置单商品拿货价
   taobao business-qa <shop_id> [platform]            经营问答数据收集(全维度JSON)
+  taobao attrs-check <shop_id> [platform]            属性补全检查(缺失属性+合法值枚举)
 
 平台:
   k3     - 开山网 (默认)
@@ -1709,6 +1825,8 @@ def _exec_taobao(sub, args):
         cmd_taobao_set_purchase_price(cmd_args[0], cmd_args[1], cmd_args[2], platform)
     elif sub == "business-qa":
         print(cmd_taobao_business_qa(cmd_args[0], platform))
+    elif sub == "attrs-check":
+        print(cmd_taobao_attrs_check(cmd_args[0], platform))
 
 
 def main():
