@@ -1012,10 +1012,132 @@ def cmd_taobao_daily_report(shop_id, platform=None):
 
     print()
 
-def cmd_taobao_profit_analysis(shop_id, platform=None):
-    """利润分析：整合订单+退款+发布记录拿货价，计算每件商品净利润"""
-    import csv as _csv
+def _load_cost_config():
+    """从配置文件读取成本配置。返回 (packing_cost, ad_daily_cost)"""
+    packing = 0.0
+    ad_daily = 0.0
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("COST_PACKING="):
+                        try:
+                            packing = float(line.split("=", 1)[1])
+                        except ValueError:
+                            pass
+                    elif line.startswith("COST_AD_DAILY="):
+                        try:
+                            ad_daily = float(line.split("=", 1)[1])
+                        except ValueError:
+                            pass
+    except Exception:
+        pass
+    return packing, ad_daily
 
+
+def _load_purchase_price_mapping():
+    """从发布记录和价格映射文件构建 num_iid → purchase_price 映射。
+    价格来源：
+    1. RECORDS_DIR/*.json 发布记录中的 prices 字段
+    2. RECORDS_DIR/purchase_prices.json 手动维护的映射 (num_iid → price)
+    3. 发布记录中的 product_ids 和 response 字段推断
+    """
+    mapping = {}
+
+    # 来源 1 + 3: 发布 JSON 记录
+    if os.path.exists(RECORDS_DIR):
+        try:
+            for fname in sorted(os.listdir(RECORDS_DIR)):
+                if not fname.endswith(".json"):
+                    continue
+                if fname == "purchase_prices.json":
+                    continue
+                fpath = os.path.join(RECORDS_DIR, fname)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for task in data.get("tasks", []):
+                        # 方式 A: records 中直接存储了 num_iid → price 映射
+                        num_iid_map = task.get("num_iids", {})
+                        prices_map = task.get("prices", {})
+                        response = task.get("response", "")
+                        # 尝试从 response JSON 中提取价格信息
+                        try:
+                            resp_data = json.loads(response) if isinstance(response, str) else response
+                            resp_price = resp_data.get("data", {}).get("price")
+                            if resp_price is not None:
+                                for pid in str(task.get("product_ids", "")).split(","):
+                                    pid = pid.strip()
+                                    if pid and pid in num_iid_map:
+                                        try:
+                                            price_val = float(resp_price)
+                                            niid = num_iid_map[pid]
+                                            if niid not in mapping:
+                                                mapping[niid] = price_val
+                                        except (ValueError, TypeError):
+                                            pass
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                        # 方式 B: 使用 prices 映射
+                        for pid, price_val in prices_map.items():
+                            pid = str(pid).strip()
+                            if pid in num_iid_map:
+                                niid = num_iid_map[pid]
+                                if niid not in mapping:
+                                    try:
+                                        mapping[niid] = float(price_val)
+                                    except (ValueError, TypeError):
+                                        pass
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    # 来源 2: 手动维护的 purchase_prices.json
+    manual_file = os.path.join(RECORDS_DIR, "purchase_prices.json")
+    if os.path.exists(manual_file):
+        try:
+            with open(manual_file, "r", encoding="utf-8") as f:
+                manual_data = json.load(f)
+            for niid, price in manual_data.items():
+                try:
+                    mapping[str(niid)] = float(price)
+                except (ValueError, TypeError):
+                    pass
+        except Exception:
+            pass
+
+    return mapping
+
+
+def cmd_taobao_set_purchase_price(shop_id, num_iid, price, platform=None):
+    """手动设置商品拿货价，写入 purchase_prices.json 映射文件。"""
+    p = platform or DEFAULT_PLATFORM
+    try:
+        price_val = float(price)
+    except ValueError:
+        print(f"错误: 价格格式无效 '{price}'")
+        return
+
+    ensure_dirs()
+    manual_file = os.path.join(RECORDS_DIR, "purchase_prices.json")
+    existing = {}
+    if os.path.exists(manual_file):
+        try:
+            with open(manual_file, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+
+    existing[str(num_iid)] = price_val
+    with open(manual_file, "w", encoding="utf-8") as f:
+        json.dump(existing, f, ensure_ascii=False, indent=2)
+    print(f"[OK] {num_iid} → ¥{price_val} 写入 purchase_prices.json")
+
+
+def cmd_taobao_profit_analysis(shop_id, platform=None):
+    """利润分析：整合订单+退款+发布记录拿货价+成本配置，计算每件商品净利润"""
     p = platform or DEFAULT_PLATFORM
     out = stdout = io.StringIO()
 
@@ -1064,31 +1186,9 @@ def cmd_taobao_profit_analysis(shop_id, platform=None):
                 if tid and amount > 0:
                     refund_map[tid] = refund_map.get(tid, 0) + amount
 
-    # ── 3. 发布记录拿货价匹配 ──
-    purchase_prices = {}  # num_iid → price
-    try:
-        for fname in sorted(os.listdir(RECORDS_DIR)):
-            if not fname.endswith(".csv"):
-                continue
-            fpath = os.path.join(RECORDS_DIR, fname)
-            with open(fpath, newline="", encoding="utf-8") as f:
-                has_price_col = False
-                lines = []
-                for line in f:
-                    lines.append(line.strip())
-                if len(lines) < 2:
-                    continue
-                reader = _csv.DictReader(lines)
-                for row in reader:
-                    niid_raw = row.get("num_iid", "").strip()
-                    price_raw = row.get("purchase_price", row.get("k3_price", "")).strip()
-                    if niid_raw and price_raw and niid_raw not in purchase_prices:
-                        try:
-                            purchase_prices[niid_raw] = float(price_raw)
-                        except ValueError:
-                            pass
-    except Exception:
-        pass  # 无发布记录时降级
+    # ── 3. 发布记录拿货价匹配 + 成本配置 ──
+    purchase_prices = _load_purchase_price_mapping()
+    packing_cost, ad_daily_cost = _load_cost_config()
 
     # ── 4. 按 num_iid 聚合 ──
     product_stats = {}  # num_iid → {revenue, order_count, refund, tid_set, samples, title}
@@ -1140,7 +1240,11 @@ def cmd_taobao_profit_analysis(shop_id, platform=None):
         net_revenue = revenue - refund
 
         purchase_price = purchase_prices.get(niid, 0)
-        cost = purchase_price * qty + net_revenue * PLATFORM_FEE_RATE
+        # 成本 = 拿货价×数量 + 平台扣点(5%) + 包装费×数量 + 广告费分摊
+        platform_fee = net_revenue * PLATFORM_FEE_RATE
+        packing = packing_cost * qty
+        ad_share = ad_daily_cost * qty / max(qty, 1)  # 按件数分摊
+        cost = purchase_price * qty + platform_fee + packing + ad_share
         net_profit = net_revenue - cost
         profit_rate = round(net_profit / net_revenue * 100, 1) if net_revenue > 0 else 0
 
@@ -1240,6 +1344,7 @@ def usage():
   taobao title-check <shop_id> [platform]             标题质量巡检
   taobao daily-report <shop_id> [platform]            每日经营日报
   taobao profit-analysis <shop_id> [platform]          利润分析(每商品净利润排行)
+  taobao set-purchase-price <shop_id> <num_iid> <price> [platform]  手动设置单商品拿货价
 
 平台:
   k3     - 开山网 (默认)
@@ -1453,6 +1558,8 @@ def _exec_taobao(sub, args):
         cmd_taobao_daily_report(cmd_args[0], platform)
     elif sub == "profit-analysis":
         print(cmd_taobao_profit_analysis(cmd_args[0], platform))
+    elif sub == "set-purchase-price":
+        cmd_taobao_set_purchase_price(cmd_args[0], cmd_args[1], cmd_args[2], platform)
 
 
 def main():

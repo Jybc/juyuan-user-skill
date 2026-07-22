@@ -18,6 +18,8 @@ from driver import (
     cmd_setup, cmd_show_keys, cmd_today, cmd_search, cmd_shops,
     cmd_publish, cmd_jobs, cmd_records, cmd_record_list, cmd_record_export,
     _resolve_platform, ensure_dirs, prompt_api_key, usage,
+    _load_cost_config, _load_purchase_price_mapping,
+    cmd_taobao_set_purchase_price,
     # taobao 单命令
     cmd_taobao_shop_info, cmd_taobao_seller_info, cmd_taobao_user_info,
     cmd_taobao_product_list, cmd_taobao_product_inventory, cmd_taobao_product_detail,
@@ -925,6 +927,60 @@ class TestProfitAnalysis(BaseTestCase):
         self.assertIn("利润分析", result)
         # 退款后净利应为 0 或接近 0
         self.assertIn("厚底凉鞋", result)
+
+
+class TestCostConfig(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def test_load_cost_config_default(self):
+        """测试默认无成本配置"""
+        packing, ad = _load_cost_config()
+        self.assertEqual(packing, 0.0)
+        self.assertEqual(ad, 0.0)
+
+    def test_load_cost_config_with_values(self):
+        """测试有成本配置时正确读取"""
+        self._write_config([
+            "API_KEY_k3=sk-test",
+            "COST_PACKING=3.5",
+            "COST_AD_DAILY=50.0",
+        ])
+        packing, ad = _load_cost_config()
+        self.assertEqual(packing, 3.5)
+        self.assertEqual(ad, 50.0)
+
+
+class TestPurchasePriceMapping(BaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._write_config(["API_KEY_k3=sk-test"])
+
+    def test_empty_mapping(self):
+        """测试无记录时返回空映射"""
+        result = _load_purchase_price_mapping()
+        self.assertEqual(result, {})
+
+    def test_manual_mapping_file(self):
+        """测试从 purchase_prices.json 读取手动映射"""
+        mapping_file = os.path.join(self.records_dir, "purchase_prices.json")
+        with open(mapping_file, "w") as f:
+            json.dump({"123456": 45.0, "789012": 78.5}, f)
+        result = _load_purchase_price_mapping()
+        self.assertEqual(result["123456"], 45.0)
+        self.assertEqual(result["789012"], 78.5)
+
+    def test_set_purchase_price_creates_file(self):
+        """测试 set-purchase-price 创建映射文件"""
+        cmd_taobao_set_purchase_price("shop1", "999888", "55.5")
+        mapping_file = os.path.join(self.records_dir, "purchase_prices.json")
+        self.assertTrue(os.path.exists(mapping_file))
+        with open(mapping_file) as f:
+            data = json.load(f)
+        self.assertEqual(data["999888"], 55.5)
 
 
 if __name__ == "__main__":
