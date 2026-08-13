@@ -61,10 +61,10 @@
 ```json
 {
   "mcpServers": {
-    "开山网0482": {
+    "开山网****": {
       "url": "https://mcp.k3.cn/mcp",
       "headers": {
-        "X-API-Key": "k3_MjE4ODEwMi4xNzg2NjAwMzA3L..."
+        "X-API-Key": "k3_************************"
       }
     }
   }
