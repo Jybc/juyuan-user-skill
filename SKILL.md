@@ -1,7 +1,7 @@
 ---
 slug: juyuan-user-skill
 name: juyuan-user-skill
-version: 1.4.0
+version: 1.4.1
 displayName: 聚源百成大师
 description: 聚源百成大师 — 通过聚源百成MCP 把开山网(K3)/包牛牛(Bao66)产品一键发到淘宝。管店、改价、发货、回评、优化标题，一个skill全搞定。
 tags: [k3, 开山网, 包牛牛, 极速发布, 电商, 鞋靴]
