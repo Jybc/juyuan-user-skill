@@ -1,4 +1,5 @@
 ---
+slug: juyuan-user-skill
 name: juyuan-user-skill
 version: 1.3.0
 displayName: 聚源百成大师
