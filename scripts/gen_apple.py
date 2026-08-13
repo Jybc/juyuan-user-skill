@@ -400,12 +400,12 @@ def profit_board_html(profit_data, shop_name=""):
       {rows}
     </table>
   </div>
-  {"<div class='missing-hint'>⚠ 标注「缺拿货价」的商品来自手工上架，未匹配到批发价。<br>通过聚宝发布的商品可自动追溯拿货价。</div>" if has_missing else ""}
+  {"<div class='missing-hint'>⚠ 标注「缺拿货价」的商品来自手工上架，未匹配到批发价。<br>通过聚源百成大师发布的商品可自动追溯拿货价。</div>" if has_missing else ""}
   {f'''  <div class="insights-section">
     <h3>经营洞察</h3>
     <ul>{insight_html}</ul>
   </div>''' if insights else ""}
-  <footer>聚宝 · 利润分析</footer>
+  <footer>聚源百成大师 · 利润分析</footer>
 </body>
 </html>"""
 
@@ -473,7 +473,7 @@ def attrs_report_html(attrs_result):
     <tr><th>商品ID</th><th>标题</th><th>已有属性</th><th>缺失属性</th><th>候选值</th></tr>
     {rows}
   </table>
-  <footer>聚宝 · 属性巡检</footer>
+  <footer>聚源百成大师 · 属性巡检</footer>
 </body>
 </html>"""
 
@@ -598,7 +598,7 @@ def season_calendar_html(calendar_text):
     <span>↗↑ 热度上升</span><span>→ 平稳</span><span>↘↓ 降温</span><span>✦ 热搜词</span>
   </div>
   {f'<div class="insights"><h3>行动建议</h3><ul>{insight_html}</ul></div>' if insights else ""}
-  <footer>聚宝 · 选品日历</footer>
+  <footer>聚源百成大师 · 选品日历</footer>
 </body>
 </html>"""
 
@@ -690,7 +690,7 @@ def desc_preview_html(product_title, desc_data):
     温馨提示：因显示��和拍摄光线差异可能存在微小色差。手工测量可能有 1-3mm 误差。支持 7 天无理由退换。
   </div>
 
-  <footer>聚宝 · 详情页预览</footer>
+  <footer>聚源百成大师 · 详情页预览</footer>
 </body>
 </html>"""
 

@@ -1,18 +1,19 @@
 # API 速查索引
 
-> 命令语法以 `python scripts/driver.py --help` 输出为准。本索引按业务分组，指向各 API 的详细参数文件。
+> 命令语法以 `python scripts/driver.py --help` 输出为准。本索引按业务分组，指向各 API 的详细参数文件。  
+> **模块归属**: `modules/selection.md`（搜品）、`modules/publish.md`（发布）、`modules/taobao-ops.md`（淘宝运营）。
 
-## 平台接口 (`api/jybc/`)
+## 平台接口 (`api/jybc/`) — 归属: selection + publish
 
-| API | 方法 | 文件 | 说明 |
-|-----|------|------|------|
-| /product/today | GET | [product-today.md](api/jybc/product-today.md) | 今日新款列表 |
-| /product/search | GET | [product-search.md](api/jybc/product-search.md) | 搜索产品（2~20字符） |
-| /user/taobao-shops | GET | [user-shops.md](api/jybc/user-shops.md) | 已绑定店铺列表 |
-| /product/fast-publish | POST | [product-fast-publish.md](api/jybc/product-fast-publish.md) | 提交极速发布 |
-| /product/fast-publish-result | GET | [product-fast-publish-result.md](api/jybc/product-fast-publish-result.md) | 查询发布结果 |
+| API | 方法 | 文件 | 说明 | 模块 |
+|-----|------|------|------|------|
+| /product/today | GET | [product-today.md](api/jybc/product-today.md) | 今日新款列表 | selection |
+| /product/search | GET | [product-search.md](api/jybc/product-search.md) | 搜索产品（2~20字符） | selection |
+| /user/taobao-shops | GET | [user-shops.md](api/jybc/user-shops.md) | 已绑定店铺列表 | selection |
+| /product/fast-publish | POST | [product-fast-publish.md](api/jybc/product-fast-publish.md) | 提交极速发布 | publish |
+| /product/fast-publish-result | GET | [product-fast-publish-result.md](api/jybc/product-fast-publish-result.md) | 查询发布结果 | publish |
 
-## 淘宝店铺管理 (`api/taobao/`)
+## 淘宝店铺管理 (`api/taobao/`) — 归属: taobao-ops
 
 ### 店铺
 
@@ -72,13 +73,28 @@
 
 快捷命令由驱动层实现，将多个 API 组合为一步操作。完整列表见 `python scripts/driver.py --help`。
 
-| 命令 | 说明 | 串联的 API 文件 |
-|------|------|----------------|
-| dashboard | 店铺仪表盘 | shop-info + product-list + trade-list + rate-list |
-| daily-report | 经营日报 | 同上 + product-inventory |
-| quick-publish | 快速选品发布 | product-today → fast-publish |
-| auto-ship | 批量发货 | trade-list → ship × N |
-| batch-price | 批量调价 | product-list → update-price × N |
-| batch-title | 批量标题优化 | product-list → update × N |
-| title-check | 标题质量巡检 | product-list（本地分析） |
-| rate-check | 差评告警 | rate-list（筛选中差评） |
+| 命令 | 说明 | 串联的 API 文件 | 模块 |
+|------|------|----------------|------|
+| dashboard | 店铺仪表盘 | shop-info + product-list + trade-list + rate-list | taobao-ops |
+| daily-report | 经营日报 | shop-info + product-list + trade-list + product-inventory | taobao-ops |
+| quick-publish | 快速选品发布 | product-today + fast-publish | publish |
+| auto-ship | 批量发货 | trade-list + ship x N | taobao-ops |
+| batch-price | 批量调价 | product-list + update-price x N | taobao-ops |
+| batch-title | 批量标题优化 | product-list + update x N | taobao-ops |
+| title-check | 标题质量巡检 | product-list（本地分析） | taobao-ops |
+| rate-check | 差评告警 | rate-list（筛选中差评） | taobao-ops |
+
+## 聚源百成MCP Tool 索引 (`mcp/`)
+
+MCP Tool 文档独立于 API 文档，每个 Tool 一个 `.md` 文件。详见 [mcp/index.md](mcp/index.md)。
+
+| 分组 | 目录 | 文档数 |
+|------|------|--------|
+| 源端（jybc） | [mcp/jybc/](mcp/jybc/) | 5 |
+| 淘宝-店铺 | [mcp/taobao/shop/](mcp/taobao/shop/) | 2 |
+| 淘宝-商品 | [mcp/taobao/product/](mcp/taobao/product/) | 8 |
+| 淘宝-订单 | [mcp/taobao/trade/](mcp/taobao/trade/) | 6 |
+| 淘宝-评价 | [mcp/taobao/rate/](mcp/taobao/rate/) | 3 |
+| 淘宝-退款 | [mcp/taobao/refund/](mcp/taobao/refund/) | 6 |
+
+> 自定义 MCP 实例命名建议：`开山网{账号}` / `包牛牛{账号}`（如 `开山网0482`），API token 内测阶段由客服提供

@@ -1619,7 +1619,7 @@ def cmd_taobao_profit_analysis(shop_id, platform=None):
     print(f"[汇总] 总收入 ¥{total_revenue:,.2f} | 总成本 ¥{total_cost:,.2f} | "
           f"净利润 ¥{total_profit:,.2f} | 利润率 {total_rate}%", file=stdout)
     if has_missing:
-        print("⚠ 部分商品缺拿货价(非聚宝发布)，已按 0 计算成本", file=stdout)
+        print("⚠ 部分商品缺拿货价(非聚源百成大师发布)，已按 0 计算成本", file=stdout)
     if packing_cost > 0 or ad_daily_cost > 0:
         parts = []
         if packing_cost > 0:
