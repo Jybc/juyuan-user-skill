@@ -83,12 +83,6 @@ homepage: https://github.com/Jybc/juyuan-user-skill
 - **有** → 直接使用，进入功能路由
 - **没有** → 提示用户：「当前未配置开山网/包牛牛 MCP，内测阶段请联系客服索取你的 API token」，并给出配置引导（服务地址 `https://mcp.k3.cn/mcp`，请求头 `X-API-Key`）
 
-## 环境与 Config
-
-检查 Python ≥ 3.8，检查 `~/.config/k3-publish/config` 中目标平台的 Key。未配置则引导输入。
-
-不同平台的 Key 互不通用，格式：`API_KEY_k3=...` / `API_KEY_bao66=...`
-
 ## 功能路由表
 
 根据用户触发的功能关键词，按需加载对应模块文件：
